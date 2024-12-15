@@ -115,7 +115,7 @@ myApiKey apiKey =
 
 wiseUrl : String
 wiseUrl =
-    "https://api.transferwise.com"
+    "http://localhost:3000/api"
 
 
 profilesApi : String
