@@ -38,23 +38,16 @@ type alias Balance =
     }
 
 
-type ApiKey
-    = Unknown
-    | Wise String
-
-
-type alias Model =
-    { apiKey : ApiKey
-    , profile : Maybe Profile
-    , balances : Maybe (List Balance)
-    }
+type Model
+    = NotConnected
+    | Connected String
+    | ProfileLoaded String Profile
+    | BalancesLoaded String Profile (List Balance)
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( { apiKey = Unknown, profile = Nothing, balances = Nothing }
-    , Cmd.none
-    )
+    ( NotConnected, Cmd.none )
 
 
 
@@ -71,7 +64,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg model =
     case msg of
         ChangeApiKey key ->
-            ( { model | apiKey = Wise key }, getPersonalProfile key )
+            connected key
 
         GotProfiles response ->
             case response of
@@ -79,23 +72,18 @@ update msg model =
                     ( model, Cmd.none )
 
                 Ok profiles ->
-                    let
-                        profile =
-                            findPersonalProfile profiles
-                    in
-                    ( { model | profile = profile }
-                    , case model.apiKey of
-                        Wise key ->
-                            case profile of
-                                Just p ->
-                                    getBalances key p
+                    case model of
+                        NotConnected ->
+                            ( model, Cmd.none )
 
-                                Nothing ->
-                                    Cmd.none
+                        Connected key ->
+                            profileLoaded key (findPersonalProfile profiles)
 
-                        Unknown ->
-                            Cmd.none
-                    )
+                        ProfileLoaded key _ ->
+                            profileLoaded key (findPersonalProfile profiles)
+
+                        BalancesLoaded key _ _ ->
+                            profileLoaded key (findPersonalProfile profiles)
 
         GotBalances response ->
             case response of
@@ -103,7 +91,31 @@ update msg model =
                     ( model, Cmd.none )
 
                 Ok balances ->
-                    ( { model | balances = Just balances }, Cmd.none )
+                    case model of
+                        NotConnected ->
+                            ( model, Cmd.none )
+
+                        Connected key ->
+                            connected key
+
+                        ProfileLoaded key profile ->
+                            ( BalancesLoaded key profile balances, Cmd.none )
+
+                        BalancesLoaded key profile _ ->
+                            ( BalancesLoaded key profile balances, Cmd.none )
+
+
+connected key =
+    ( Connected key, getPersonalProfile key )
+
+
+profileLoaded key profile =
+    case profile of
+        Just p ->
+            ( ProfileLoaded key p, getBalances key p )
+
+        Nothing ->
+            ( NotConnected, Cmd.none )
 
 
 findPersonalProfile : List Profile -> Maybe Profile
@@ -132,26 +144,44 @@ subscriptions _ =
 view : Model -> Html Msg
 view model =
     div []
-        [ input [ placeholder "Enter your API key", value (myApiKey model.apiKey), onInput ChangeApiKey ] []
-        , div []
-            [ text
-                (case model.profile of
-                    Nothing ->
-                        ""
+        (input [ placeholder "Enter your API key", value (myApiKey model), onInput ChangeApiKey ] []
+            :: loggedInView model
+            ++ balancesView model
+        )
 
-                    Just p ->
-                        "Logged in as " ++ p.fullName
-                )
-            ]
-        , div []
-            [ case model.balances of
-                Nothing ->
-                    text ""
 
-                Just balances ->
-                    ul [] (List.map balanceView balances)
-            ]
-        ]
+loggedInView model =
+    case model of
+        NotConnected ->
+            []
+
+        Connected _ ->
+            textInDiv "Loading profile..."
+
+        ProfileLoaded _ profile ->
+            textInDiv ("Logged in as " ++ profile.fullName)
+
+        BalancesLoaded _ profile _ ->
+            textInDiv ("Logged in as " ++ profile.fullName)
+
+
+textInDiv value =
+    [ div [] [ text value ] ]
+
+
+balancesView model =
+    case model of
+        NotConnected ->
+            []
+
+        Connected _ ->
+            []
+
+        ProfileLoaded _ _ ->
+            textInDiv "Loading balances..."
+
+        BalancesLoaded _ _ balances ->
+            [ ul [] (List.map balanceView balances) ]
 
 
 balanceView : Balance -> Html msg
@@ -159,13 +189,18 @@ balanceView balance =
     li [] [ text (balance.currency ++ " " ++ String.fromFloat balance.amount) ]
 
 
-myApiKey : ApiKey -> String
-myApiKey apiKey =
-    case apiKey of
-        Unknown ->
+myApiKey model =
+    case model of
+        NotConnected ->
             ""
 
-        Wise key ->
+        Connected key ->
+            key
+
+        ProfileLoaded key _ ->
+            key
+
+        BalancesLoaded key _ _ ->
             key
 
 
