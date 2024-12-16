@@ -1,10 +1,10 @@
-module Main exposing (..)
+module Main exposing (main)
 
 import Browser
 import Html exposing (Html, div, input, li, text, ul)
 import Html.Attributes exposing (placeholder, value)
 import Html.Events exposing (onInput)
-import Http exposing (Expect, emptyBody, header)
+import Http exposing (Error(..), Expect, emptyBody, header)
 import Json.Decode exposing (Decoder, at, field, float, int, list, map3, map4, nullable, string)
 import Platform.Cmd as Cmd
 import Url.Builder as B
@@ -38,15 +38,47 @@ type alias Balance =
     }
 
 
-type Model
+type ModelState
     = NotConnected
     | Connected String
     | ProfileLoaded String Profile (List Balance)
 
 
+type alias Model =
+    { error : Maybe String
+    , state : ModelState
+    }
+
+
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( NotConnected, Cmd.none )
+    ( ok NotConnected, Cmd.none )
+
+
+ok state =
+    { error = Nothing, state = state }
+
+
+err error state =
+    { error = Just (httpErrorToString error), state = state }
+
+
+httpErrorToString e =
+    case e of
+        BadUrl msg ->
+            "Bad URL: " ++ msg
+
+        Timeout ->
+            "Timeout"
+
+        NetworkError ->
+            "Network error"
+
+        BadStatus msg ->
+            "Bad status: " ++ String.fromInt msg
+
+        BadBody msg ->
+            "Bad body: " ++ msg
 
 
 
@@ -67,13 +99,13 @@ update msg model =
 
         GotProfiles response ->
             case response of
-                Err _ ->
-                    ( model, Cmd.none )
+                Err e ->
+                    ( err e NotConnected, Cmd.none )
 
                 Ok profiles ->
-                    case model of
+                    case model.state of
                         NotConnected ->
-                            ( model, Cmd.none )
+                            ( ok model.state, Cmd.none )
 
                         Connected key ->
                             profileLoaded key (findPersonalProfile profiles)
@@ -83,11 +115,11 @@ update msg model =
 
         GotBalances response ->
             case response of
-                Err _ ->
-                    ( model, Cmd.none )
+                Err e ->
+                    ( err e model.state, Cmd.none )
 
                 Ok balances ->
-                    case model of
+                    case model.state of
                         NotConnected ->
                             ( model, Cmd.none )
 
@@ -95,20 +127,20 @@ update msg model =
                             connected key
 
                         ProfileLoaded key profile _ ->
-                            ( ProfileLoaded key profile balances, Cmd.none )
+                            ( ok (ProfileLoaded key profile balances), Cmd.none )
 
 
 connected key =
-    ( Connected key, getPersonalProfile key )
+    ( ok (Connected key), getPersonalProfile key )
 
 
 profileLoaded key profile =
     case profile of
         Just p ->
-            ( ProfileLoaded key p [], getBalances key p )
+            ( ok (ProfileLoaded key p []), getBalances key p )
 
         Nothing ->
-            ( NotConnected, Cmd.none )
+            ( ok NotConnected, Cmd.none )
 
 
 findPersonalProfile : List Profile -> Maybe Profile
@@ -137,10 +169,22 @@ subscriptions _ =
 view : Model -> Html Msg
 view model =
     div []
-        (input [ placeholder "Enter your API key", value (myApiKey model), onInput ChangeApiKey ] []
-            :: loggedInView model
-            ++ balancesView model
+        (List.concat
+            [ errorView model.error
+            , [ input [ placeholder "Enter your API key", value (myApiKey model.state), onInput ChangeApiKey ] [] ]
+            , loggedInView model.state
+            , balancesView model.state
+            ]
         )
+
+
+errorView error =
+    case error of
+        Just msg ->
+            textInDiv ("Error occured: " ++ msg)
+
+        Nothing ->
+            []
 
 
 loggedInView model =
