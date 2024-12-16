@@ -41,8 +41,7 @@ type alias Balance =
 type Model
     = NotConnected
     | Connected String
-    | ProfileLoaded String Profile
-    | BalancesLoaded String Profile (List Balance)
+    | ProfileLoaded String Profile (List Balance)
 
 
 init : () -> ( Model, Cmd Msg )
@@ -79,10 +78,7 @@ update msg model =
                         Connected key ->
                             profileLoaded key (findPersonalProfile profiles)
 
-                        ProfileLoaded key _ ->
-                            profileLoaded key (findPersonalProfile profiles)
-
-                        BalancesLoaded key _ _ ->
+                        ProfileLoaded key _ _ ->
                             profileLoaded key (findPersonalProfile profiles)
 
         GotBalances response ->
@@ -98,11 +94,8 @@ update msg model =
                         Connected key ->
                             connected key
 
-                        ProfileLoaded key profile ->
-                            ( BalancesLoaded key profile balances, Cmd.none )
-
-                        BalancesLoaded key profile _ ->
-                            ( BalancesLoaded key profile balances, Cmd.none )
+                        ProfileLoaded key profile _ ->
+                            ( ProfileLoaded key profile balances, Cmd.none )
 
 
 connected key =
@@ -112,7 +105,7 @@ connected key =
 profileLoaded key profile =
     case profile of
         Just p ->
-            ( ProfileLoaded key p, getBalances key p )
+            ( ProfileLoaded key p [], getBalances key p )
 
         Nothing ->
             ( NotConnected, Cmd.none )
@@ -158,10 +151,7 @@ loggedInView model =
         Connected _ ->
             textInDiv "Loading profile..."
 
-        ProfileLoaded _ profile ->
-            textInDiv ("Logged in as " ++ profile.fullName)
-
-        BalancesLoaded _ profile _ ->
+        ProfileLoaded _ profile _ ->
             textInDiv ("Logged in as " ++ profile.fullName)
 
 
@@ -177,10 +167,10 @@ balancesView model =
         Connected _ ->
             []
 
-        ProfileLoaded _ _ ->
+        ProfileLoaded _ _ [] ->
             textInDiv "Loading balances..."
 
-        BalancesLoaded _ _ balances ->
+        ProfileLoaded _ _ balances ->
             [ ul [] (List.map balanceView balances) ]
 
 
@@ -197,10 +187,7 @@ myApiKey model =
         Connected key ->
             key
 
-        ProfileLoaded key _ ->
-            key
-
-        BalancesLoaded key _ _ ->
+        ProfileLoaded key _ _ ->
             key
 
 
