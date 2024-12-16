@@ -75,31 +75,36 @@ type alias PaymentOption =
     }
 
 
-type ModelState
+type ApiState
     = NotConnected
     | Connected String
-    | ProfileLoaded String Profile (List Balance) QuoteForm
+
+
+type Status a
+    = NotLoaded
+    | Loading
+    | Loaded a
+    | Failed
 
 
 type alias Model =
     { error : Maybe String
-    , state : ModelState
+    , state : ApiState
+    , profile : Status Profile
+    , balances : Status (List Balance)
+    , quoteForm : QuoteForm
+    , quote : Status Quote
     }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( ok NotConnected, Cmd.none )
+    ( Model Nothing NotConnected NotLoaded NotLoaded (QuoteForm Nothing 100) NotLoaded, Cmd.none )
 
 
-ok : ModelState -> Model
-ok state =
-    { error = Nothing, state = state }
-
-
-err : Error -> ModelState -> Model
-err error state =
-    { error = Just (httpErrorToString error), state = state }
+err : Error -> Model -> Model
+err error model =
+    { model | error = Just (httpErrorToString error) }
 
 
 httpErrorToString : Error -> String
@@ -136,66 +141,61 @@ type Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case ( msg, model.state ) of
-        ( ChangeApiKey key, _ ) ->
-            connected key
+update msg ({ quoteForm } as model) =
+    case ( msg, model.state, model.profile ) of
+        ( ChangeApiKey key, _, _ ) ->
+            ( { model | state = Connected key, profile = Loading }, getPersonalProfile key )
 
-        ( GotProfiles response, Connected key ) ->
+        ( GotProfiles response, Connected key, _ ) ->
             case response of
-                Err e ->
-                    ( err e NotConnected, Cmd.none )
-
                 Ok profiles ->
-                    profileLoaded key (findPersonalProfile profiles)
+                    profileLoaded model (findPersonalProfile profiles) key
 
-        ( GotBalances response, ProfileLoaded key profile _ quoteForm ) ->
-            case response of
                 Err e ->
-                    ( err e model.state, Cmd.none )
+                    ( err e { model | profile = Failed }, Cmd.none )
 
+        ( GotBalances response, _, _ ) ->
+            case response of
                 Ok balances ->
-                    ( ok (ProfileLoaded key profile balances quoteForm), Cmd.none )
+                    ( { model | balances = Loaded balances }, Cmd.none )
 
-        ( ChangeAmount val, ProfileLoaded key profile balances quoteForm ) ->
-            ( ok (ProfileLoaded key profile balances { quoteForm | amount = Maybe.withDefault 0 (String.toFloat val) }), Cmd.none )
+                Err e ->
+                    ( err e { model | balances = Failed }, Cmd.none )
 
-        ( ChangeSourceCurrency val, ProfileLoaded key profile balances quoteForm ) ->
-            ( ok (ProfileLoaded key profile balances { quoteForm | currency = Just val }), Cmd.none )
+        ( ChangeAmount val, _, _ ) ->
+            ( { model | quoteForm = { quoteForm | amount = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
 
-        ( SubmitQuote, ProfileLoaded key profile _ {currency, amount} ) ->
-            case currency of
+        ( ChangeSourceCurrency val, _, _ ) ->
+            ( { model | quoteForm = { quoteForm | currency = Just val } }, Cmd.none )
+
+        ( SubmitQuote, Connected key, Loaded profile ) ->
+            case model.quoteForm.currency of
                 Just curr ->
-                    ( ok model.state, submitQuote key profile curr amount )
+                    ( { model | quote = Loading }, submitQuote key profile curr model.quoteForm.amount )
 
                 Nothing ->
-                    ( { error = Just "Invalid quote: missing currency", state = model.state }, Cmd.none )
+                    ( { model | error = Just "Invalid quote: missing currency" }, Cmd.none )
 
-        ( GotQuote response, _ ) ->
+        ( GotQuote response, _, _ ) ->
             case response of
+                Ok quote ->
+                    ( { model | quote = Loaded quote }, Cmd.none )
+
                 Err e ->
-                    ( err e model.state, Cmd.none )
+                    ( err e { model | quote = Failed }, Cmd.none )
 
-                Ok _ ->
-                    ( ok model.state, Cmd.none )
-
-        ( _, _ ) ->
-            ( { error = Just "Invalid operation", state = model.state }, Cmd.none )
+        _ ->
+            ( { model | error = Just "Invalid operation" }, Cmd.none )
 
 
-connected : String -> ( Model, Cmd Msg )
-connected key =
-    ( ok (Connected key), getPersonalProfile key )
-
-
-profileLoaded : String -> Maybe Profile -> ( Model, Cmd Msg )
-profileLoaded key profile =
+profileLoaded : Model -> Maybe Profile -> String -> ( Model, Cmd Msg )
+profileLoaded model profile key =
     case profile of
         Just p ->
-            ( ok (ProfileLoaded key p [] (QuoteForm Nothing 100)), getBalances key p )
+            ( { model | profile = Loaded p, balances = Loading }, getBalances key p )
 
         Nothing ->
-            ( ok NotConnected, Cmd.none )
+            ( { model | error = Just "Personal profile not found" }, Cmd.none )
 
 
 findPersonalProfile : List Profile -> Maybe Profile
@@ -240,8 +240,8 @@ view model =
         (List.concat
             [ errorView model.error
             , [ input [ placeholder "Enter your API key", value (myApiKey model.state), onInput ChangeApiKey ] [] ]
-            , loggedInView model.state
-            , balancesView model.state
+            , loggedInView model
+            , balancesView model
             ]
         )
 
@@ -256,17 +256,17 @@ errorView error =
             []
 
 
-loggedInView : ModelState -> List (Html msg)
+loggedInView : Model -> List (Html msg)
 loggedInView model =
-    case model of
-        NotConnected ->
-            []
-
-        Connected _ ->
+    case ( model.state, model.profile ) of
+        ( Connected _, Loading ) ->
             textInDiv "Loading profile..."
 
-        ProfileLoaded _ profile _ _ ->
+        ( Connected _, Loaded profile ) ->
             textInDiv ("Logged in as " ++ profile.fullName)
+
+        _ ->
+            []
 
 
 textInDiv : String -> List (Html msg)
@@ -274,20 +274,17 @@ textInDiv value =
     [ div [] [ text value ] ]
 
 
-balancesView : ModelState -> List (Html Msg)
+balancesView : Model -> List (Html Msg)
 balancesView model =
-    case model of
-        NotConnected ->
-            []
-
-        Connected _ ->
-            []
-
-        ProfileLoaded _ _ [] _ ->
+    case model.balances of
+        Loading ->
             textInDiv "Loading balances..."
 
-        ProfileLoaded _ _ balances quoteForm ->
-            [ form [ onSubmit SubmitQuote ] (ul [] (List.map balanceView balances) :: quoteView quoteForm) ]
+        Loaded balances ->
+            [ form [ onSubmit SubmitQuote ] (ul [] (List.map balanceView balances) :: quoteView model.quoteForm) ]
+
+        _ ->
+            []
 
 
 balanceView : Balance -> Html Msg
@@ -302,16 +299,13 @@ quoteView quoteForm =
     ]
 
 
-myApiKey : ModelState -> String
+myApiKey : ApiState -> String
 myApiKey model =
     case model of
         NotConnected ->
             ""
 
         Connected key ->
-            key
-
-        ProfileLoaded key _ _ _ ->
             key
 
 
@@ -450,4 +444,3 @@ paymentOptionDecoder =
         (field "payOut" D.string)
         (at [ "fee", "total" ] D.float)
         (at [ "price", "total", "value", "amount" ] D.float)
-
