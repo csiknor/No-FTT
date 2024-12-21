@@ -295,7 +295,7 @@ view model =
     div []
         (List.concat
             [ errorView model.error
-            , [ input [ placeholder "Enter your API key", value (myApiKey model.state), onInput ChangeApiKey ] [] ]
+            , [ apiKeyView model.state ]
             , loggedInView model
             , [ quoteFormView model ]
             , quoteView model.quote
@@ -312,6 +312,10 @@ errorView error =
         Nothing ->
             []
 
+
+apiKeyView : ApiState -> Html Msg
+apiKeyView state =
+    input [ type_ "password", placeholder "Enter your API key", value (myApiKey state), onInput ChangeApiKey ] []
 
 loggedInView : Model -> List (Html msg)
 loggedInView model =
