@@ -229,7 +229,7 @@ update msg ({ quoteForm } as model) =
             ( { model | quoteForm = { quoteForm | amount = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
 
         ( ChangeSourceCurrency val, Connected key, Loaded profile ) ->
-            ( { model | quoteForm = { quoteForm | currency = Just val } }, getRecipients key profile.id val )
+            ( { model | quoteForm = { quoteForm | currency = Just val, account = Nothing } }, getRecipients key profile.id val )
 
         ( ChangeTargetAccount val, _, _ ) ->
             case String.toInt val of
