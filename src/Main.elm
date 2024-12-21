@@ -247,6 +247,7 @@ view model =
             , [ input [ placeholder "Enter your API key", value (myApiKey model.state), onInput ChangeApiKey ] [] ]
             , loggedInView model
             , balancesView model
+            , quoteView model.quote
             ]
         )
 
@@ -286,7 +287,7 @@ balancesView model =
             textInDiv "Loading balances..."
 
         Loaded balances ->
-            [ form [ onSubmit SubmitQuote ] (ul [] (List.map balanceView balances) :: quoteView model.quoteForm) ]
+            [ form [ onSubmit SubmitQuote ] (ul [] (List.map balanceView balances) :: quoteFormView model.quoteForm) ]
 
         _ ->
             []
@@ -297,8 +298,8 @@ balanceView balance =
     li [] [ input [ type_ "radio", name "sourceCurrency", value balance.currency, onInput ChangeSourceCurrency ] [], text (balance.currency ++ " " ++ String.fromFloat balance.amount) ]
 
 
-quoteView : QuoteForm -> List (Html Msg)
-quoteView quoteForm =
+quoteFormView : QuoteForm -> List (Html Msg)
+quoteFormView quoteForm =
     [ input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat quoteForm.amount), onInput ChangeAmount ] []
     , input [ type_ "submit", value "Submit" ] []
     ]
@@ -312,6 +313,37 @@ myApiKey model =
 
         Connected key ->
             key
+
+
+quoteView : Status Quote -> List (Html Msg)
+quoteView status =
+    case status of
+        Loading ->
+            textInDiv "Loading quote..."
+
+        Loaded quote ->
+            [ div [] [ text ("Quote: " ++ quote.id) ]
+            , div [] [ text ("Source: " ++ quote.sourceCurrency ++ " " ++ String.fromFloat (Maybe.withDefault 0 quote.sourceAmount)) ]
+            , div [] [ text ("Target: " ++ quote.targetCurrency ++ " " ++ String.fromFloat (Maybe.withDefault 0 quote.targetAmount)) ]
+            , div [] [ text ("Pay in: " ++ quote.preferredPayIn) ]
+            ]
+                ++ (paymentOptionView <| List.head <| List.filter (\p -> p.payIn == quote.preferredPayIn) <| quote.paymentOptions)
+
+        _ ->
+            []
+
+
+paymentOptionView : Maybe PaymentOption -> List (Html Msg)
+paymentOptionView value =
+    case value of
+        Just option ->
+            [ div [] [ text ("Pay out: " ++ option.payOut) ]
+            , div [] [ text ("Fee: " ++ String.fromFloat option.feeAmount) ]
+            , div [] [ text ("Price: " ++ String.fromFloat option.priceTotalAmount) ]
+            ]
+
+        _ ->
+            textInDiv "No payment options"
 
 
 
