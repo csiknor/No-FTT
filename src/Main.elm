@@ -5,7 +5,7 @@ import Html exposing (Html, div, form, input, li, text, ul)
 import Html.Attributes as A exposing (name, placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect, emptyBody, header)
-import Json.Decode as D exposing (Decoder, at, field, list, map3, map4)
+import Json.Decode as D exposing (Decoder, at, field, list, map3, map4, map6)
 import Json.Encode as E
 import Platform.Cmd as Cmd
 import Url.Builder as B
@@ -41,6 +41,7 @@ type alias Balance =
 
 type alias QuoteForm =
     { currency : Maybe String
+    , account: Maybe Int
     , amount : Float
     }
 
@@ -75,6 +76,16 @@ type alias PaymentOption =
     }
 
 
+type alias Recipient =
+    { id : Int
+    , name : String
+    , currency : String
+    , accountSummary : String
+    , longAccountSummary : String
+    , ownedByCustomer : Bool
+    }
+
+
 type ApiState
     = NotConnected
     | Connected String
@@ -94,12 +105,13 @@ type alias Model =
     , balances : Status (List Balance)
     , quoteForm : QuoteForm
     , quote : Status Quote
+    , recipients : Status (List Recipient)
     }
 
 
 init : () -> ( Model, Cmd Msg )
 init _ =
-    ( Model Nothing NotConnected NotLoaded NotLoaded (QuoteForm Nothing 100) NotLoaded, Cmd.none )
+    ( Model Nothing NotConnected NotLoaded NotLoaded (QuoteForm Nothing Nothing 100) NotLoaded NotLoaded, Cmd.none )
 
 
 ok : Model -> Model
@@ -146,6 +158,11 @@ withQuote model quote =
     { model | quote = quote }
 
 
+withRecipients : Model -> Status (List Recipient) -> Model
+withRecipients model recipients =
+    { model | recipients = recipients }
+
+
 withError : Model -> String -> Model
 withError model error =
     { model | error = Just error }
@@ -185,7 +202,9 @@ type Msg
     = ChangeApiKey String
     | GotProfiles (Result Http.Error (List Profile))
     | GotBalances (Result Http.Error (List Balance))
+    | GotRecipients (Result Http.Error (List Recipient))
     | ChangeSourceCurrency String
+    | ChangeTargetAccount String
     | ChangeAmount String
     | SubmitQuote
     | GotQuote (Result Http.Error Quote)
@@ -203,19 +222,30 @@ update msg ({ quoteForm } as model) =
         ( GotBalances response, _, _ ) ->
             handleResultAndStop response (withBalances model)
 
+        ( GotRecipients response, _, _ ) ->
+            handleResultAndStop response (withRecipients model)
+
         ( ChangeAmount val, _, _ ) ->
             ( { model | quoteForm = { quoteForm | amount = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
 
-        ( ChangeSourceCurrency val, _, _ ) ->
-            ( { model | quoteForm = { quoteForm | currency = Just val } }, Cmd.none )
+        ( ChangeSourceCurrency val, Connected key, Loaded profile ) ->
+            ( { model | quoteForm = { quoteForm | currency = Just val } }, getRecipients key profile.id val )
 
-        ( SubmitQuote, Connected key, Loaded profile ) ->
-            case model.quoteForm.currency of
-                Just curr ->
-                    ( { model | quote = Loading }, submitQuote key profile curr model.quoteForm.amount )
+        ( ChangeTargetAccount val, _, _ ) ->
+            case String.toInt val of
+                Just acc ->
+                    ( { model | quoteForm = { quoteForm | account = Just acc } }, Cmd.none )
 
                 Nothing ->
-                    ( { model | error = Just "Invalid quote: missing currency" }, Cmd.none )
+                    ( { model | error = Just "Invalid recipient" }, Cmd.none )
+
+        ( SubmitQuote, Connected key, Loaded profile ) ->
+            case (model.quoteForm.currency, model.quoteForm.account) of
+                (Just curr, Just acc) ->
+                    ( { model | quote = Loading }, submitQuote key profile curr acc model.quoteForm.amount )
+
+                _ ->
+                    ( { model | error = Just "Invalid quote: missing input" }, Cmd.none )
 
         ( GotQuote response, _, _ ) ->
             handleResultAndStop response (withQuote model)
@@ -234,8 +264,8 @@ isPersonalProfile p =
     p.typ == "PERSONAL"
 
 
-submitQuote : String -> Profile -> String -> Float -> Cmd Msg
-submitQuote key profile currency amount =
+submitQuote : String -> Profile -> String -> Int -> Float -> Cmd Msg
+submitQuote key profile currency account amount =
     postQuote key
         { profileId = profile.id
         , sourceCurrency = currency
@@ -243,7 +273,7 @@ submitQuote key profile currency amount =
         , sourceAmount = Just amount
         , targetAmount = Nothing
         , preferredPayIn = "BALANCE"
-        , targetAccount = Nothing
+        , targetAccount = Just account
         }
 
 
@@ -308,7 +338,7 @@ balancesView model =
             textInDiv "Loading balances..."
 
         Loaded balances ->
-            [ form [ onSubmit SubmitQuote ] (ul [] (List.map balanceView balances) :: quoteFormView model.quoteForm) ]
+            [ form [ onSubmit SubmitQuote ] (ul [] (List.map balanceView balances) :: (recipientsView model.recipients ++ quoteFormView model.quoteForm)) ]
 
         _ ->
             []
@@ -324,6 +354,24 @@ quoteFormView quoteForm =
     [ input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat quoteForm.amount), onInput ChangeAmount ] []
     , input [ type_ "submit", value "Submit" ] []
     ]
+
+
+recipientsView : Status (List Recipient) -> List (Html Msg)
+recipientsView status =
+    case status of
+        Loading ->
+            textInDiv "Loading recipients..."
+
+        Loaded recipients ->
+             [ ul [] <| List.map recipientView recipients ]
+
+        _ ->
+            []
+
+
+recipientView : Recipient -> Html Msg
+recipientView recipient =
+    li [] [ input [ type_ "radio", name "targetAccount", value (String.fromInt recipient.id), onInput ChangeTargetAccount ] [], text (recipient.name ++ " " ++ recipient.accountSummary) ]
 
 
 myApiKey : ApiState -> String
@@ -502,3 +550,24 @@ paymentOptionDecoder =
         (field "payOut" D.string)
         (at [ "fee", "total" ] D.float)
         (at [ "price", "total", "value", "amount" ] D.float)
+
+
+recipientsUrl : Int -> String -> String
+recipientsUrl profileId currency =
+    B.crossOrigin wiseUrl [ "v2", "accounts" ] [ B.string "profileId" (String.fromInt profileId), B.string "currency" currency ]
+
+
+getRecipients : String -> Int -> String -> Cmd Msg
+getRecipients token profileId currency =
+    apiGet { url = recipientsUrl profileId currency, expect = Http.expectJson GotRecipients (field "content" <| list recipientDecoder), token = token }
+
+
+recipientDecoder : Decoder Recipient
+recipientDecoder =
+    map6 Recipient
+        (field "id" D.int)
+        (at [ "name", "fullName" ] D.string)
+        (field "currency" D.string)
+        (field "accountSummary" D.string)
+        (field "longAccountSummary" D.string)
+        (field "ownedByCustomer" D.bool)
