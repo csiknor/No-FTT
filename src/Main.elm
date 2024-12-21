@@ -61,7 +61,7 @@ type alias Quote =
     , sourceCurrency : String
     , targetCurrency : String
     , sourceAmount : Maybe Float
-    , targetAmount : Float
+    , targetAmount : Maybe Float
     , preferredPayIn : String
     , paymentOptions : List PaymentOption
     }
@@ -219,8 +219,8 @@ submitQuote key profile currency amount =
         { profileId = profile.id
         , sourceCurrency = currency
         , targetCurrency = currency
-        , sourceAmount = Nothing
-        , targetAmount = Just amount
+        , sourceAmount = Just amount
+        , targetAmount = Nothing
         , preferredPayIn = "BALANCE"
         , targetAccount = Nothing
         }
@@ -437,7 +437,7 @@ quoteDecoder =
         (field "sourceCurrency" D.string)
         (field "targetCurrency" D.string)
         (D.maybe (field "sourceAmount" D.float))
-        (field "targetAmount" D.float)
+        (D.maybe (field "targetAmount" D.float))
         (field "preferredPayIn" D.string)
         (field "paymentOptions" (D.list paymentOptionDecoder))
 
