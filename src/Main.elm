@@ -2,7 +2,7 @@ module Main exposing (main)
 
 import Browser
 import Html exposing (Html, div, form, input, li, text, ul)
-import Html.Attributes as A exposing (name, placeholder, type_, value)
+import Html.Attributes as A exposing (checked, name, placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect, emptyBody, header)
 import Json.Decode as D exposing (Decoder, at, field, list, map3, map4, map6)
@@ -338,16 +338,25 @@ balancesView model =
             textInDiv "Loading balances..."
 
         Loaded balances ->
-            [ form [ onSubmit SubmitQuote ] (ul [] (List.map balanceView balances) :: (recipientsView model.recipients ++ quoteFormView model.quoteForm)) ]
+            [ form [ onSubmit SubmitQuote ] (ul [] (List.map (balanceView model.quoteForm.currency) balances) :: (recipientsView model.quoteForm.account model.recipients ++ quoteFormView model.quoteForm)) ]
 
         _ ->
             []
 
 
-balanceView : Balance -> Html Msg
-balanceView balance =
-    li [] [ input [ type_ "radio", name "sourceCurrency", value balance.currency, onInput ChangeSourceCurrency ] [], text (balance.currency ++ " " ++ String.fromFloat balance.amount) ]
-
+balanceView : Maybe String -> Balance -> Html Msg
+balanceView curr balance =
+    li []
+        [ input
+            [ type_ "radio"
+            , name "sourceCurrency"
+            , value balance.currency
+            , checked <| Maybe.map ((==) balance.currency) >> Maybe.withDefault False <| curr
+            , onInput ChangeSourceCurrency
+            ]
+            []
+        , text (balance.currency ++ " " ++ String.fromFloat balance.amount)
+        ]
 
 quoteFormView : QuoteForm -> List (Html Msg)
 quoteFormView quoteForm =
@@ -356,22 +365,32 @@ quoteFormView quoteForm =
     ]
 
 
-recipientsView : Status (List Recipient) -> List (Html Msg)
-recipientsView status =
+recipientsView : Maybe Int -> Status (List Recipient) -> List (Html Msg)
+recipientsView acc status =
     case status of
         Loading ->
             textInDiv "Loading recipients..."
 
         Loaded recipients ->
-             [ ul [] <| List.map recipientView recipients ]
+             [ ul [] <| List.map (recipientView acc) recipients ]
 
         _ ->
             []
 
 
-recipientView : Recipient -> Html Msg
-recipientView recipient =
-    li [] [ input [ type_ "radio", name "targetAccount", value (String.fromInt recipient.id), onInput ChangeTargetAccount ] [], text (recipient.name ++ " " ++ recipient.accountSummary) ]
+recipientView : Maybe Int -> Recipient -> Html Msg
+recipientView acc recipient =
+    li []
+        [ input
+            [ type_ "radio"
+            , name "targetAccount"
+            , checked <| Maybe.map ((==) recipient.id) >> Maybe.withDefault False <| acc
+            , value (String.fromInt recipient.id)
+            , onInput ChangeTargetAccount
+            ]
+            []
+        , text (recipient.name ++ " " ++ recipient.accountSummary)
+        ]
 
 
 myApiKey : ApiState -> String
