@@ -297,7 +297,7 @@ view model =
             [ errorView model.error
             , [ input [ placeholder "Enter your API key", value (myApiKey model.state), onInput ChangeApiKey ] [] ]
             , loggedInView model
-            , balancesView model
+            , [ quoteFormView model ]
             , quoteView model.quote
             ]
         )
@@ -331,14 +331,27 @@ textInDiv value =
     [ div [] [ text value ] ]
 
 
-balancesView : Model -> List (Html Msg)
-balancesView model =
-    case model.balances of
+quoteFormView : Model -> Html Msg
+quoteFormView model =
+    case model.state of
+        Connected _ ->
+            form [ onSubmit SubmitQuote ]
+                <| balancesView model.quoteForm.currency model.balances
+                    ++ recipientsView model.quoteForm.account model.recipients
+                    ++ amountView model.quoteForm.amount
+                    ++ [input [ type_ "submit", value "Submit" ] []]
+
+        _ -> text ""
+
+
+balancesView : Maybe String -> Status (List Balance) -> List (Html Msg)
+balancesView curr status =
+    case status of
         Loading ->
             textInDiv "Loading balances..."
 
         Loaded balances ->
-            [ form [ onSubmit SubmitQuote ] (ul [] (List.map (balanceView model.quoteForm.currency) balances) :: (recipientsView model.quoteForm.account model.recipients ++ quoteFormView model.quoteForm)) ]
+            [ ul [] <| List.map (balanceView curr) balances ]
 
         _ ->
             []
@@ -358,10 +371,9 @@ balanceView curr balance =
         , text (balance.currency ++ " " ++ String.fromFloat balance.amount)
         ]
 
-quoteFormView : QuoteForm -> List (Html Msg)
-quoteFormView quoteForm =
-    [ input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat quoteForm.amount), onInput ChangeAmount ] []
-    , input [ type_ "submit", value "Submit" ] []
+amountView : Float -> List (Html Msg)
+amountView amount =
+    [ input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat amount), onInput ChangeAmount ] []
     ]
 
 
