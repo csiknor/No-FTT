@@ -102,6 +102,11 @@ init _ =
     ( Model Nothing NotConnected NotLoaded NotLoaded (QuoteForm Nothing 100) NotLoaded, Cmd.none )
 
 
+ok : Model -> Model
+ok model =
+    { model | error = Nothing }
+
+
 err : Error -> Model -> Model
 err error model =
     { model | error = Just (httpErrorToString error) }
@@ -157,7 +162,7 @@ update msg ({ quoteForm } as model) =
         ( GotBalances response, _, _ ) ->
             case response of
                 Ok balances ->
-                    ( { model | balances = Loaded balances }, Cmd.none )
+                    ( ok { model | balances = Loaded balances }, Cmd.none )
 
                 Err e ->
                     ( err e { model | balances = Failed }, Cmd.none )
@@ -192,7 +197,7 @@ profileLoaded : Model -> Maybe Profile -> String -> ( Model, Cmd Msg )
 profileLoaded model profile key =
     case profile of
         Just p ->
-            ( { model | profile = Loaded p, balances = Loading }, getBalances key p )
+            ( ok { model | profile = Loaded p, balances = Loading }, getBalances key p )
 
         Nothing ->
             ( { model | error = Just "Personal profile not found" }, Cmd.none )
