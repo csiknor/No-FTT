@@ -131,6 +131,52 @@ httpErrorToString e =
             "Bad body: " ++ msg
 
 
+withProfile : Model -> Status Profile -> Model
+withProfile model profile =
+    { model | profile = profile }
+
+
+withBalances : Model -> Status (List Balance) -> Model
+withBalances model balances =
+    { model | balances = balances }
+
+
+withQuote : Model -> Status Quote -> Model
+withQuote model quote =
+    { model | quote = quote }
+
+
+withError : Model -> String -> Model
+withError model error =
+    { model | error = Just error }
+
+
+handleResultAndExecute : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Result String b -> Cmd Msg) -> ( Model, Cmd Msg )
+handleResultAndExecute response mod with cmd =
+    case response of
+        Ok value ->
+            case mod value of
+                Ok v ->
+                    ( ok <| with <| Loaded v, cmd (Ok v) )
+
+                Err e ->
+                    ( withError (with NotLoaded) e, cmd (Err e) )
+
+        Err e ->
+            ( err e <| with Failed, Cmd.none )
+
+
+handleResultAndStop : Result Http.Error a -> (Status a -> Model) -> ( Model, Cmd Msg )
+handleResultAndStop response with =
+    handleResultAndExecute response (\a -> Ok a) with (\_ -> Cmd.none)
+
+
+handleResultAndLoad : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Model -> Status x -> Model) -> (b -> Cmd Msg) -> ( Model, Cmd Msg )
+handleResultAndLoad response mod with with2 cmd =
+    handleResultAndExecute response mod (with >> (\model -> with2 model Loading))
+        <| Result.map (\x -> cmd x) >> Result.withDefault Cmd.none
+
+
 
 -- UPDATE
 
@@ -152,20 +198,10 @@ update msg ({ quoteForm } as model) =
             ( { model | state = Connected key, profile = Loading }, getPersonalProfile key )
 
         ( GotProfiles response, Connected key, _ ) ->
-            case response of
-                Ok profiles ->
-                    profileLoaded model (findPersonalProfile profiles) key
-
-                Err e ->
-                    ( err e { model | profile = Failed }, Cmd.none )
+            handleResultAndLoad response (findPersonalProfile >> Result.fromMaybe "Personal profile not found") (withProfile model) withBalances (getBalances key)
 
         ( GotBalances response, _, _ ) ->
-            case response of
-                Ok balances ->
-                    ( ok { model | balances = Loaded balances }, Cmd.none )
-
-                Err e ->
-                    ( err e { model | balances = Failed }, Cmd.none )
+            handleResultAndStop response (withBalances model)
 
         ( ChangeAmount val, _, _ ) ->
             ( { model | quoteForm = { quoteForm | amount = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
@@ -182,30 +218,15 @@ update msg ({ quoteForm } as model) =
                     ( { model | error = Just "Invalid quote: missing currency" }, Cmd.none )
 
         ( GotQuote response, _, _ ) ->
-            case response of
-                Ok quote ->
-                    ( { model | quote = Loaded quote }, Cmd.none )
-
-                Err e ->
-                    ( err e { model | quote = Failed }, Cmd.none )
+            handleResultAndStop response (withQuote model)
 
         _ ->
             ( { model | error = Just "Invalid operation" }, Cmd.none )
 
 
-profileLoaded : Model -> Maybe Profile -> String -> ( Model, Cmd Msg )
-profileLoaded model profile key =
-    case profile of
-        Just p ->
-            ( ok { model | profile = Loaded p, balances = Loading }, getBalances key p )
-
-        Nothing ->
-            ( { model | error = Just "Personal profile not found" }, Cmd.none )
-
-
 findPersonalProfile : List Profile -> Maybe Profile
 findPersonalProfile profiles =
-    List.head (List.filter isPersonalProfile profiles)
+    List.head <| List.filter isPersonalProfile profiles
 
 
 isPersonalProfile : Profile -> Bool
