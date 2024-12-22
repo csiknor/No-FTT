@@ -2,16 +2,15 @@ module Main exposing (main)
 
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
-import Html exposing (Html, div, form, input, li, text, ul)
-import Html.Attributes as A exposing (checked, name, placeholder, type_, value)
+import Html exposing (Html, div, form, input, text)
+import Html.Attributes as A exposing (placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect)
-import Json.Decode as D exposing (Decoder, at, field, list, map6)
 import Platform.Cmd as Cmd
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Quote exposing (Quote, QuoteReq, postQuote, quoteView)
-import Url.Builder as B
-import Api exposing (ApiState(..), Status(..), apiKeyView, wiseApiGet)
+import Recipient exposing (Recipient, getRecipients, recipientsView)
+import Api exposing (ApiState(..), Status(..), apiKeyView)
 
 
 -- MAIN
@@ -30,16 +29,6 @@ type alias QuoteForm =
     { currency : Maybe String
     , account: Maybe Int
     , amount : Float
-    }
-
-
-type alias Recipient =
-    { id : Int
-    , name : String
-    , currency : String
-    , accountSummary : String
-    , longAccountSummary : String
-    , ownedByCustomer : Bool
     }
 
 
@@ -174,7 +163,7 @@ update msg ({ quoteForm } as model) =
             ( { model | quoteForm = { quoteForm | amount = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
 
         ( ChangeSourceCurrency val, Connected key, Loaded profile ) ->
-            ( { model | quoteForm = { quoteForm | currency = Just val, account = Nothing } }, getRecipients key profile.id val )
+            ( { model | quoteForm = { quoteForm | currency = Just val, account = Nothing } }, getRecipients key profile.id val GotRecipients )
 
         ( ChangeTargetAccount val, _, _ ) ->
             case String.toInt val of
@@ -260,8 +249,8 @@ quoteFormView model =
         Connected _ ->
             form [ onSubmit SubmitQuote ]
                 <| balancesView model.quoteForm.currency model.balances ChangeSourceCurrency
-                    :: recipientsView model.quoteForm.account model.recipients
-                    ++ amountView model.quoteForm.amount
+                    :: recipientsView model.quoteForm.account model.recipients ChangeTargetAccount
+                    :: amountView model.quoteForm.amount
                     ++ [input [ type_ "submit", value "Submit" ] []]
 
         _ -> text ""
@@ -271,55 +260,3 @@ amountView : Float -> List (Html Msg)
 amountView amount =
     [ input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat amount), onInput ChangeAmount ] []
     ]
-
-
-recipientsView : Maybe Int -> Status (List Recipient) -> List (Html Msg)
-recipientsView acc status =
-    case status of
-        Loading ->
-            textInDiv "Loading recipients..."
-
-        Loaded recipients ->
-             [ ul [] <| List.map (recipientView acc) recipients ]
-
-        _ ->
-            []
-
-
-recipientView : Maybe Int -> Recipient -> Html Msg
-recipientView acc recipient =
-    li []
-        [ input
-            [ type_ "radio"
-            , name "targetAccount"
-            , checked <| Maybe.map ((==) recipient.id) >> Maybe.withDefault False <| acc
-            , value (String.fromInt recipient.id)
-            , onInput ChangeTargetAccount
-            ]
-            []
-        , text (recipient.name ++ " " ++ recipient.accountSummary)
-        ]
-
-
--- HTTP
-
-
-recipientsUrl : Int -> String -> String
-recipientsUrl profileId currency =
-    B.absolute [ "v2", "accounts" ] [ B.string "profileId" (String.fromInt profileId), B.string "currency" currency ]
-
-
-getRecipients : String -> Int -> String -> Cmd Msg
-getRecipients token profileId currency =
-    wiseApiGet { path = recipientsUrl profileId currency, expect = Http.expectJson GotRecipients (field "content" <| list recipientDecoder), token = token }
-
-
-recipientDecoder : Decoder Recipient
-recipientDecoder =
-    map6 Recipient
-        (field "id" D.int)
-        (at [ "name", "fullName" ] D.string)
-        (field "currency" D.string)
-        (field "accountSummary" D.string)
-        (field "longAccountSummary" D.string)
-        (field "ownedByCustomer" D.bool)
