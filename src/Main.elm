@@ -1,11 +1,12 @@
 module Main exposing (main)
 
+import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import Html exposing (Html, div, form, input, li, text, ul)
 import Html.Attributes as A exposing (checked, name, placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect)
-import Json.Decode as D exposing (Decoder, at, field, list, map4, map6)
+import Json.Decode as D exposing (Decoder, at, field, list, map6)
 import Json.Encode as E
 import Platform.Cmd as Cmd
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
@@ -23,14 +24,6 @@ main =
 
 
 -- MODEL
-
-
-type alias Balance =
-    { id : Int
-    , currency : String
-    , name : Maybe String
-    , amount : Float
-    }
 
 
 type alias QuoteForm =
@@ -199,7 +192,7 @@ update msg ({ quoteForm } as model) =
             ( { model | state = Connected key, profile = Loading }, getPersonalProfile key GotProfiles)
 
         ( GotProfiles response, Connected key, _ ) ->
-            handleResultAndLoad response (findPersonalProfile >> Result.fromMaybe "Personal profile not found") (withProfile model) withBalances (getBalances key)
+            handleResultAndLoad response (findPersonalProfile >> Result.fromMaybe "Personal profile not found") (withProfile model) withBalances (getBalances key GotBalances)
 
         ( GotBalances response, _, _ ) ->
             handleResultAndStop response (withBalances model)
@@ -295,40 +288,13 @@ quoteFormView model =
     case model.state of
         Connected _ ->
             form [ onSubmit SubmitQuote ]
-                <| balancesView model.quoteForm.currency model.balances
-                    ++ recipientsView model.quoteForm.account model.recipients
+                <| balancesView model.quoteForm.currency model.balances ChangeSourceCurrency
+                    :: recipientsView model.quoteForm.account model.recipients
                     ++ amountView model.quoteForm.amount
                     ++ [input [ type_ "submit", value "Submit" ] []]
 
         _ -> text ""
 
-
-balancesView : Maybe String -> Status (List Balance) -> List (Html Msg)
-balancesView curr status =
-    case status of
-        Loading ->
-            textInDiv "Loading balances..."
-
-        Loaded balances ->
-            [ ul [] <| List.map (balanceView curr) balances ]
-
-        _ ->
-            []
-
-
-balanceView : Maybe String -> Balance -> Html Msg
-balanceView curr balance =
-    li []
-        [ input
-            [ type_ "radio"
-            , name "sourceCurrency"
-            , value balance.currency
-            , checked <| Maybe.map ((==) balance.currency) >> Maybe.withDefault False <| curr
-            , onInput ChangeSourceCurrency
-            ]
-            []
-        , text (balance.currency ++ " " ++ String.fromFloat balance.amount)
-        ]
 
 amountView : Float -> List (Html Msg)
 amountView amount =
@@ -397,25 +363,6 @@ paymentOptionView value =
 
 
 -- HTTP
-
-
-balancesUrl : Int -> String
-balancesUrl id =
-    B.absolute [ "v4", "profiles", String.fromInt id, "balances" ] [ B.string "types" "STANDARD" ]
-
-
-getBalances : String -> Profile -> Cmd Msg
-getBalances token profile =
-    wiseApiGet { path = balancesUrl profile.id, expect = Http.expectJson GotBalances (list balanceDecoder), token = token }
-
-
-balanceDecoder : Decoder Balance
-balanceDecoder =
-    map4 Balance
-        (field "id" D.int)
-        (field "currency" D.string)
-        (field "name" (D.nullable D.string))
-        (at [ "amount", "value" ] D.float)
 
 
 quotesUrl : Int -> String
