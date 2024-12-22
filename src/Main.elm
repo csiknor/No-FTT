@@ -307,7 +307,7 @@ errorView : Maybe String -> List (Html msg)
 errorView error =
     case error of
         Just msg ->
-            textInDiv ("Error occured: " ++ msg)
+            textInDiv ("Error occurred: " ++ msg)
 
         Nothing ->
             []
