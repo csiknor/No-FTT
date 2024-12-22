@@ -7,11 +7,11 @@ import Html.Attributes as A exposing (checked, name, placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect)
 import Json.Decode as D exposing (Decoder, at, field, list, map6)
-import Json.Encode as E
 import Platform.Cmd as Cmd
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
+import Quote exposing (Quote, QuoteReq, postQuote, quoteView)
 import Url.Builder as B
-import Api exposing (ApiState(..), Status(..), apiKeyView, wiseApiGet, wiseApiPost)
+import Api exposing (ApiState(..), Status(..), apiKeyView, wiseApiGet)
 
 
 -- MAIN
@@ -30,36 +30,6 @@ type alias QuoteForm =
     { currency : Maybe String
     , account: Maybe Int
     , amount : Float
-    }
-
-
-type alias QuoteReq =
-    { profileId : Int
-    , sourceCurrency : String
-    , targetCurrency : String
-    , sourceAmount : Maybe Float
-    , targetAmount : Maybe Float
-    , preferredPayIn : String
-    , targetAccount : Maybe Int
-    }
-
-
-type alias Quote =
-    { id : String
-    , sourceCurrency : String
-    , targetCurrency : String
-    , sourceAmount : Maybe Float
-    , targetAmount : Maybe Float
-    , preferredPayIn : String
-    , paymentOptions : List PaymentOption
-    }
-
-
-type alias PaymentOption =
-    { payIn : String
-    , payOut : String
-    , feeAmount : Float
-    , priceTotalAmount : Float
     }
 
 
@@ -240,6 +210,7 @@ submitQuote key profile currency account amount =
         , preferredPayIn = "BALANCE"
         , targetAccount = Just account
         }
+        GotQuote
 
 
 
@@ -263,7 +234,7 @@ view model =
             , [ apiKeyView model.state ChangeApiKey ]
             , [ profileView model.profile ]
             , [ quoteFormView model ]
-            , quoteView model.quote
+            , [ quoteView model.quote ]
             ]
         )
 
@@ -330,93 +301,7 @@ recipientView acc recipient =
         ]
 
 
-quoteView : Status Quote -> List (Html Msg)
-quoteView status =
-    case status of
-        Loading ->
-            textInDiv "Loading quote..."
-
-        Loaded quote ->
-            [ div [] [ text ("Quote: " ++ quote.id) ]
-            , div [] [ text ("Source: " ++ quote.sourceCurrency ++ " " ++ String.fromFloat (Maybe.withDefault 0 quote.sourceAmount)) ]
-            , div [] [ text ("Target: " ++ quote.targetCurrency ++ " " ++ String.fromFloat (Maybe.withDefault 0 quote.targetAmount)) ]
-            , div [] [ text ("Pay in: " ++ quote.preferredPayIn) ]
-            ]
-                ++ (paymentOptionView <| List.head <| List.filter (\p -> p.payIn == quote.preferredPayIn) <| quote.paymentOptions)
-
-        _ ->
-            []
-
-
-paymentOptionView : Maybe PaymentOption -> List (Html Msg)
-paymentOptionView value =
-    case value of
-        Just option ->
-            [ div [] [ text ("Pay out: " ++ option.payOut) ]
-            , div [] [ text ("Fee: " ++ String.fromFloat option.feeAmount) ]
-            , div [] [ text ("Price: " ++ String.fromFloat option.priceTotalAmount) ]
-            ]
-
-        _ ->
-            textInDiv "No payment options"
-
-
-
 -- HTTP
-
-
-quotesUrl : Int -> String
-quotesUrl id =
-    B.absolute [ "v3", "profiles", String.fromInt id, "quotes" ] []
-
-
-postQuote : String -> QuoteReq -> Cmd Msg
-postQuote token req =
-    wiseApiPost { path = quotesUrl req.profileId, body = Http.jsonBody (quoteReqEncoder req), expect = Http.expectJson GotQuote quoteDecoder, token = token }
-
-
-quoteReqEncoder : QuoteReq -> E.Value
-quoteReqEncoder req =
-    E.object
-        [ ( "profileId", E.int req.profileId )
-        , ( "sourceCurrency", E.string req.sourceCurrency )
-        , ( "targetCurrency", E.string req.targetCurrency )
-        , ( "sourceAmount", maybeOrNull E.float req.sourceAmount )
-        , ( "targetAmount", maybeOrNull E.float req.targetAmount )
-        , ( "preferredPayIn", E.string req.preferredPayIn )
-        , ( "targetAccount", maybeOrNull E.int req.targetAccount )
-        ]
-
-
-maybeOrNull : (a -> E.Value) -> Maybe a -> E.Value
-maybeOrNull encoder value =
-    case value of
-        Just v ->
-            encoder v
-
-        Nothing ->
-            E.null
-
-
-quoteDecoder : Decoder Quote
-quoteDecoder =
-    D.map7 Quote
-        (field "id" D.string)
-        (field "sourceCurrency" D.string)
-        (field "targetCurrency" D.string)
-        (D.maybe (field "sourceAmount" D.float))
-        (D.maybe (field "targetAmount" D.float))
-        (field "preferredPayIn" D.string)
-        (field "paymentOptions" (D.list paymentOptionDecoder))
-
-
-paymentOptionDecoder : Decoder PaymentOption
-paymentOptionDecoder =
-    D.map4 PaymentOption
-        (field "payIn" D.string)
-        (field "payOut" D.string)
-        (at [ "fee", "total" ] D.float)
-        (at [ "price", "total", "value", "amount" ] D.float)
 
 
 recipientsUrl : Int -> String -> String
