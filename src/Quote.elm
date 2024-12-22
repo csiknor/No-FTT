@@ -1,9 +1,6 @@
-module Quote exposing (Quote, QuoteReq, PaymentOption, quoteView, postQuote)
-
-
+module Quote exposing (PaymentOption, Quote, QuoteReq, postQuote, quoteView)
 
 -- MODEL
-
 
 import Api exposing (Status(..), wiseApiPost)
 import Html exposing (Html, div, text)
@@ -11,6 +8,8 @@ import Http
 import Json.Decode as D
 import Json.Encode as E
 import Url.Builder as B
+
+
 type alias QuoteReq =
     { profileId : Int
     , sourceCurrency : String

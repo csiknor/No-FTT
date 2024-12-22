@@ -1,4 +1,4 @@
-module Profile exposing (Profile, findPersonalProfile, profileView, getPersonalProfile)
+module Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 
 import Api exposing (Status(..), wiseApiGet)
 import Html exposing (Html, div, text)
@@ -37,7 +37,7 @@ isPersonalProfile p =
 
 profileView : Status Profile -> Html msg
 profileView status =
-    case status  of
+    case status of
         Loading ->
             div [] [ text "Loading profile..." ]
 

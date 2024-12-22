@@ -1,10 +1,10 @@
-module Api exposing (ApiState(..), Status(..), httpErrorToString, apiKeyView, wiseApiGet, wiseApiPost)
-
+module Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString, wiseApiGet, wiseApiPost)
 
 import Html exposing (Html, input)
 import Html.Attributes exposing (placeholder, type_, value)
 import Html.Events exposing (onInput)
 import Http exposing (Error(..), Expect, emptyBody, header)
+
 
 
 -- MODEL
@@ -64,6 +64,7 @@ myApiKey model =
             key
 
 
+
 -- HTTP
 
 
@@ -107,5 +108,3 @@ wiseApiPost req =
         , timeout = Nothing
         , tracker = Nothing
         }
-
-

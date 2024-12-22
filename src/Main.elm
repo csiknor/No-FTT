@@ -1,5 +1,6 @@
 module Main exposing (main)
 
+import Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import Error exposing (errorView)
@@ -11,7 +12,7 @@ import Platform.Cmd as Cmd
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Quote exposing (Quote, QuoteReq, postQuote, quoteView)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
-import Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString)
+
 
 
 -- MAIN
@@ -28,7 +29,7 @@ main =
 
 type alias QuoteForm =
     { currency : Maybe String
-    , account: Maybe Int
+    , account : Maybe Int
     , amount : Float
     }
 
@@ -84,32 +85,6 @@ withError model error =
     { model | error = Just error }
 
 
-handleResultAndExecute : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Result String b -> Cmd Msg) -> ( Model, Cmd Msg )
-handleResultAndExecute response mod with cmd =
-    case response of
-        Ok value ->
-            case mod value of
-                Ok v ->
-                    ( ok <| with <| Loaded v, cmd (Ok v) )
-
-                Err e ->
-                    ( withError (with NotLoaded) e, cmd (Err e) )
-
-        Err e ->
-            ( err e <| with Failed, Cmd.none )
-
-
-handleResultAndStop : Result Http.Error a -> (Status a -> Model) -> ( Model, Cmd Msg )
-handleResultAndStop response with =
-    handleResultAndExecute response (\a -> Ok a) with (\_ -> Cmd.none)
-
-
-handleResultAndLoad : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Model -> Status x -> Model) -> (b -> Cmd Msg) -> ( Model, Cmd Msg )
-handleResultAndLoad response mod with with2 cmd =
-    handleResultAndExecute response mod (with >> (\model -> with2 model Loading))
-        <| Result.map (\x -> cmd x) >> Result.withDefault Cmd.none
-
-
 
 -- UPDATE
 
@@ -130,7 +105,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ quoteForm } as model) =
     case ( msg, model.state, model.profile ) of
         ( ChangeApiKey key, _, _ ) ->
-            ( { model | state = Connected key, profile = Loading }, getPersonalProfile key GotProfiles)
+            ( { model | state = Connected key, profile = Loading }, getPersonalProfile key GotProfiles )
 
         ( GotProfiles response, Connected key, _ ) ->
             handleResultAndLoad response (findPersonalProfile >> Result.fromMaybe "Personal profile not found") (withProfile model) withBalances (getBalances key GotBalances)
@@ -156,8 +131,8 @@ update msg ({ quoteForm } as model) =
                     ( { model | error = Just "Invalid recipient" }, Cmd.none )
 
         ( SubmitQuote, Connected key, Loaded profile ) ->
-            case (model.quoteForm.currency, model.quoteForm.account) of
-                (Just curr, Just acc) ->
+            case ( model.quoteForm.currency, model.quoteForm.account ) of
+                ( Just curr, Just acc ) ->
                     ( { model | quote = Loading }, submitQuote key profile curr acc model.quoteForm.amount )
 
                 _ ->
@@ -168,6 +143,33 @@ update msg ({ quoteForm } as model) =
 
         _ ->
             ( { model | error = Just "Invalid operation" }, Cmd.none )
+
+
+handleResultAndExecute : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Result String b -> Cmd Msg) -> ( Model, Cmd Msg )
+handleResultAndExecute response mod with cmd =
+    case response of
+        Ok value ->
+            case mod value of
+                Ok v ->
+                    ( ok <| with <| Loaded v, cmd (Ok v) )
+
+                Err e ->
+                    ( withError (with NotLoaded) e, cmd (Err e) )
+
+        Err e ->
+            ( err e <| with Failed, Cmd.none )
+
+
+handleResultAndStop : Result Http.Error a -> (Status a -> Model) -> ( Model, Cmd Msg )
+handleResultAndStop response with =
+    handleResultAndExecute response (\a -> Ok a) with (\_ -> Cmd.none)
+
+
+handleResultAndLoad : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Model -> Status x -> Model) -> (b -> Cmd Msg) -> ( Model, Cmd Msg )
+handleResultAndLoad response mod with with2 cmd =
+    handleResultAndExecute response mod (with >> (\model -> with2 model Loading)) <|
+        Result.map (\x -> cmd x)
+            >> Result.withDefault Cmd.none
 
 
 submitQuote : String -> Profile -> String -> Int -> Float -> Cmd Msg
@@ -200,30 +202,29 @@ subscriptions _ =
 view : Model -> Html Msg
 view model =
     div []
-        (List.concat
-            [ [ errorView model.error ]
-            , [ apiKeyView model.state ChangeApiKey ]
-            , [ profileView model.profile ]
-            , [ quoteFormView model ]
-            , [ quoteView model.quote ]
-            ]
-        )
+        [ errorView model.error
+        , apiKeyView model.state ChangeApiKey
+        , profileView model.profile
+        , quoteFormView model
+        , quoteView model.quote
+        ]
 
 
 quoteFormView : Model -> Html Msg
 quoteFormView model =
     case model.state of
         Connected _ ->
-            form [ onSubmit SubmitQuote ]
-                <| balancesView model.quoteForm.currency model.balances ChangeSourceCurrency
-                    :: recipientsView model.quoteForm.account model.recipients ChangeTargetAccount
-                    :: amountView model.quoteForm.amount
-                    ++ [input [ type_ "submit", value "Submit" ] []]
+            form [ onSubmit SubmitQuote ] <|
+                [ balancesView model.quoteForm.currency model.balances ChangeSourceCurrency
+                , recipientsView model.quoteForm.account model.recipients ChangeTargetAccount
+                , amountView model.quoteForm.amount
+                , input [ type_ "submit", value "Submit" ] []
+                ]
 
-        _ -> text ""
+        _ ->
+            text ""
 
 
-amountView : Float -> List (Html Msg)
+amountView : Float -> Html Msg
 amountView amount =
-    [ input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat amount), onInput ChangeAmount ] []
-    ]
+    input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat amount), onInput ChangeAmount ] []

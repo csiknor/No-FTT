@@ -1,4 +1,4 @@
-module Recipient exposing (Recipient, recipientsView, getRecipients)
+module Recipient exposing (Recipient, getRecipients, recipientsView)
 
 import Api exposing (Status(..), wiseApiGet)
 import Html exposing (Html, div, input, li, text, ul)
@@ -7,6 +7,7 @@ import Html.Events exposing (onInput)
 import Http
 import Json.Decode as D
 import Url.Builder as B
+
 
 
 -- MODEL
@@ -30,10 +31,10 @@ recipientsView : Maybe Int -> Status (List Recipient) -> (String -> msg) -> Html
 recipientsView acc status msg =
     case status of
         Loading ->
-            div [] [text "Loading recipients..." ]
+            div [] [ text "Loading recipients..." ]
 
         Loaded recipients ->
-             ul [] <| List.map (recipientView acc msg) recipients
+            ul [] <| List.map (recipientView acc msg) recipients
 
         _ ->
             text ""

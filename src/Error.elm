@@ -1,6 +1,5 @@
 module Error exposing (errorView)
 
-
 import Html exposing (Html, div, text)
 
 
