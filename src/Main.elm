@@ -2,6 +2,7 @@ module Main exposing (main)
 
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
+import Error exposing (errorView)
 import Html exposing (Html, div, form, input, text)
 import Html.Attributes as A exposing (placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
@@ -10,7 +11,7 @@ import Platform.Cmd as Cmd
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Quote exposing (Quote, QuoteReq, postQuote, quoteView)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
-import Api exposing (ApiState(..), Status(..), apiKeyView)
+import Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString)
 
 
 -- MAIN
@@ -56,25 +57,6 @@ ok model =
 err : Error -> Model -> Model
 err error model =
     { model | error = Just (httpErrorToString error) }
-
-
-httpErrorToString : Error -> String
-httpErrorToString e =
-    case e of
-        BadUrl msg ->
-            "Bad URL: " ++ msg
-
-        Timeout ->
-            "Timeout"
-
-        NetworkError ->
-            "Network error"
-
-        BadStatus msg ->
-            "Bad status: " ++ String.fromInt msg
-
-        BadBody msg ->
-            "Bad body: " ++ msg
 
 
 withProfile : Model -> Status Profile -> Model
@@ -219,28 +201,13 @@ view : Model -> Html Msg
 view model =
     div []
         (List.concat
-            [ errorView model.error
+            [ [ errorView model.error ]
             , [ apiKeyView model.state ChangeApiKey ]
             , [ profileView model.profile ]
             , [ quoteFormView model ]
             , [ quoteView model.quote ]
             ]
         )
-
-
-errorView : Maybe String -> List (Html msg)
-errorView error =
-    case error of
-        Just msg ->
-            textInDiv ("Error occurred: " ++ msg)
-
-        Nothing ->
-            []
-
-
-textInDiv : String -> List (Html msg)
-textInDiv value =
-    [ div [] [ text value ] ]
 
 
 quoteFormView : Model -> Html Msg

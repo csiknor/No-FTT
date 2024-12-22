@@ -1,10 +1,10 @@
-module Api exposing (ApiState(..), Status(..), apiKeyView, wiseApiGet, wiseApiPost)
+module Api exposing (ApiState(..), Status(..), httpErrorToString, apiKeyView, wiseApiGet, wiseApiPost)
 
 
 import Html exposing (Html, input)
 import Html.Attributes exposing (placeholder, type_, value)
 import Html.Events exposing (onInput)
-import Http exposing (Expect, emptyBody, header)
+import Http exposing (Error(..), Expect, emptyBody, header)
 
 
 -- MODEL
@@ -20,6 +20,30 @@ type Status a
     | Loading
     | Loaded a
     | Failed
+
+
+
+-- UPDATE
+
+
+httpErrorToString : Error -> String
+httpErrorToString e =
+    case e of
+        BadUrl msg ->
+            "Bad URL: " ++ msg
+
+        Timeout ->
+            "Timeout"
+
+        NetworkError ->
+            "Network error"
+
+        BadStatus msg ->
+            "Bad status: " ++ String.fromInt msg
+
+        BadBody msg ->
+            "Bad body: " ++ msg
+
 
 
 -- VIEW
