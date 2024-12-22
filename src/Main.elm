@@ -5,9 +5,10 @@ import Html exposing (Html, div, form, input, li, text, ul)
 import Html.Attributes as A exposing (checked, name, placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect)
-import Json.Decode as D exposing (Decoder, at, field, list, map3, map4, map6)
+import Json.Decode as D exposing (Decoder, at, field, list, map4, map6)
 import Json.Encode as E
 import Platform.Cmd as Cmd
+import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Url.Builder as B
 import Api exposing (ApiState(..), Status(..), apiKeyView, wiseApiGet, wiseApiPost)
 
@@ -22,13 +23,6 @@ main =
 
 
 -- MODEL
-
-
-type alias Profile =
-    { id : Int
-    , typ : String
-    , fullName : String
-    }
 
 
 type alias Balance =
@@ -202,7 +196,7 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ quoteForm } as model) =
     case ( msg, model.state, model.profile ) of
         ( ChangeApiKey key, _, _ ) ->
-            ( { model | state = Connected key, profile = Loading }, getPersonalProfile key )
+            ( { model | state = Connected key, profile = Loading }, getPersonalProfile key GotProfiles)
 
         ( GotProfiles response, Connected key, _ ) ->
             handleResultAndLoad response (findPersonalProfile >> Result.fromMaybe "Personal profile not found") (withProfile model) withBalances (getBalances key)
@@ -242,16 +236,6 @@ update msg ({ quoteForm } as model) =
             ( { model | error = Just "Invalid operation" }, Cmd.none )
 
 
-findPersonalProfile : List Profile -> Maybe Profile
-findPersonalProfile profiles =
-    List.head <| List.filter isPersonalProfile profiles
-
-
-isPersonalProfile : Profile -> Bool
-isPersonalProfile p =
-    p.typ == "PERSONAL"
-
-
 submitQuote : String -> Profile -> String -> Int -> Float -> Cmd Msg
 submitQuote key profile currency account amount =
     postQuote key
@@ -284,7 +268,7 @@ view model =
         (List.concat
             [ errorView model.error
             , [ apiKeyView model.state ChangeApiKey ]
-            , loggedInView model
+            , [ profileView model.profile ]
             , [ quoteFormView model ]
             , quoteView model.quote
             ]
@@ -298,19 +282,6 @@ errorView error =
             textInDiv ("Error occurred: " ++ msg)
 
         Nothing ->
-            []
-
-
-loggedInView : Model -> List (Html msg)
-loggedInView model =
-    case ( model.state, model.profile ) of
-        ( Connected _, Loading ) ->
-            textInDiv "Loading profile..."
-
-        ( Connected _, Loaded profile ) ->
-            textInDiv ("Logged in as " ++ profile.fullName)
-
-        _ ->
             []
 
 
@@ -426,24 +397,6 @@ paymentOptionView value =
 
 
 -- HTTP
-
-
-profilesApi : String
-profilesApi =
-    "/v2/profiles"
-
-
-getPersonalProfile : String -> Cmd Msg
-getPersonalProfile token =
-    wiseApiGet { path = profilesApi, expect = Http.expectJson GotProfiles (list profileDecoder), token = token }
-
-
-profileDecoder : Decoder Profile
-profileDecoder =
-    map3 Profile
-        (field "id" D.int)
-        (field "type" D.string)
-        (field "fullName" D.string)
 
 
 balancesUrl : Int -> String
