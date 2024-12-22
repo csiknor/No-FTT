@@ -4,12 +4,12 @@ import Browser
 import Html exposing (Html, div, form, input, li, text, ul)
 import Html.Attributes as A exposing (checked, name, placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
-import Http exposing (Error(..), Expect, emptyBody, header)
+import Http exposing (Error(..), Expect)
 import Json.Decode as D exposing (Decoder, at, field, list, map3, map4, map6)
 import Json.Encode as E
 import Platform.Cmd as Cmd
 import Url.Builder as B
-
+import Api exposing (ApiState(..), Status(..), apiKeyView, wiseApiGet, wiseApiPost)
 
 
 -- MAIN
@@ -84,18 +84,6 @@ type alias Recipient =
     , longAccountSummary : String
     , ownedByCustomer : Bool
     }
-
-
-type ApiState
-    = NotConnected
-    | Connected String
-
-
-type Status a
-    = NotLoaded
-    | Loading
-    | Loaded a
-    | Failed
 
 
 type alias Model =
@@ -295,7 +283,7 @@ view model =
     div []
         (List.concat
             [ errorView model.error
-            , [ apiKeyView model.state ]
+            , [ apiKeyView model.state ChangeApiKey ]
             , loggedInView model
             , [ quoteFormView model ]
             , quoteView model.quote
@@ -312,10 +300,6 @@ errorView error =
         Nothing ->
             []
 
-
-apiKeyView : ApiState -> Html Msg
-apiKeyView state =
-    input [ type_ "password", placeholder "Enter your API key", value (myApiKey state), onInput ChangeApiKey ] []
 
 loggedInView : Model -> List (Html msg)
 loggedInView model =
@@ -409,16 +393,6 @@ recipientView acc recipient =
         ]
 
 
-myApiKey : ApiState -> String
-myApiKey model =
-    case model of
-        NotConnected ->
-            ""
-
-        Connected key ->
-            key
-
-
 quoteView : Status Quote -> List (Html Msg)
 quoteView status =
     case status of
@@ -454,56 +428,14 @@ paymentOptionView value =
 -- HTTP
 
 
-wiseUrl : String
-wiseUrl =
-    "http://localhost:3000/api"
-
-
 profilesApi : String
 profilesApi =
     "/v2/profiles"
 
 
-apiGet :
-    { url : String
-    , expect : Expect msg
-    , token : String
-    }
-    -> Cmd msg
-apiGet req =
-    Http.request
-        { method = "GET"
-        , headers = [ header "Authorization" ("Bearer " ++ req.token) ]
-        , url = req.url
-        , body = emptyBody
-        , expect = req.expect
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-
-apiPost :
-    { url : String
-    , body : Http.Body
-    , expect : Expect msg
-    , token : String
-    }
-    -> Cmd msg
-apiPost req =
-    Http.request
-        { method = "POST"
-        , headers = [ header "Authorization" ("Bearer " ++ req.token) ]
-        , url = req.url
-        , body = req.body
-        , expect = req.expect
-        , timeout = Nothing
-        , tracker = Nothing
-        }
-
-
 getPersonalProfile : String -> Cmd Msg
 getPersonalProfile token =
-    apiGet { url = wiseUrl ++ profilesApi, expect = Http.expectJson GotProfiles (list profileDecoder), token = token }
+    wiseApiGet { path = profilesApi, expect = Http.expectJson GotProfiles (list profileDecoder), token = token }
 
 
 profileDecoder : Decoder Profile
@@ -516,12 +448,12 @@ profileDecoder =
 
 balancesUrl : Int -> String
 balancesUrl id =
-    B.crossOrigin wiseUrl [ "v4", "profiles", String.fromInt id, "balances" ] [ B.string "types" "STANDARD" ]
+    B.absolute [ "v4", "profiles", String.fromInt id, "balances" ] [ B.string "types" "STANDARD" ]
 
 
 getBalances : String -> Profile -> Cmd Msg
 getBalances token profile =
-    apiGet { url = balancesUrl profile.id, expect = Http.expectJson GotBalances (list balanceDecoder), token = token }
+    wiseApiGet { path = balancesUrl profile.id, expect = Http.expectJson GotBalances (list balanceDecoder), token = token }
 
 
 balanceDecoder : Decoder Balance
@@ -535,12 +467,12 @@ balanceDecoder =
 
 quotesUrl : Int -> String
 quotesUrl id =
-    B.crossOrigin wiseUrl [ "v3", "profiles", String.fromInt id, "quotes" ] []
+    B.absolute [ "v3", "profiles", String.fromInt id, "quotes" ] []
 
 
 postQuote : String -> QuoteReq -> Cmd Msg
 postQuote token req =
-    apiPost { url = quotesUrl req.profileId, body = Http.jsonBody (quoteReqEncoder req), expect = Http.expectJson GotQuote quoteDecoder, token = token }
+    wiseApiPost { path = quotesUrl req.profileId, body = Http.jsonBody (quoteReqEncoder req), expect = Http.expectJson GotQuote quoteDecoder, token = token }
 
 
 quoteReqEncoder : QuoteReq -> E.Value
@@ -589,12 +521,12 @@ paymentOptionDecoder =
 
 recipientsUrl : Int -> String -> String
 recipientsUrl profileId currency =
-    B.crossOrigin wiseUrl [ "v2", "accounts" ] [ B.string "profileId" (String.fromInt profileId), B.string "currency" currency ]
+    B.absolute [ "v2", "accounts" ] [ B.string "profileId" (String.fromInt profileId), B.string "currency" currency ]
 
 
 getRecipients : String -> Int -> String -> Cmd Msg
 getRecipients token profileId currency =
-    apiGet { url = recipientsUrl profileId currency, expect = Http.expectJson GotRecipients (field "content" <| list recipientDecoder), token = token }
+    wiseApiGet { path = recipientsUrl profileId currency, expect = Http.expectJson GotRecipients (field "content" <| list recipientDecoder), token = token }
 
 
 recipientDecoder : Decoder Recipient
