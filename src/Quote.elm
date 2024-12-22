@@ -1,4 +1,4 @@
-module Quote exposing (PaymentOption, Quote, QuoteReq, postQuote, quoteView)
+module Quote exposing (PaymentOption, Quote, QuoteReq, TransferMethod(..), postQuote, quoteView)
 
 -- MODEL
 
@@ -10,13 +10,17 @@ import Json.Encode as E
 import Url.Builder as B
 
 
+type TransferMethod
+    = Balance
+
+
 type alias QuoteReq =
     { profileId : Int
     , sourceCurrency : String
     , targetCurrency : String
     , sourceAmount : Maybe Float
     , targetAmount : Maybe Float
-    , preferredPayIn : String
+    , preferredPayIn : TransferMethod
     , targetAccount : Maybe Int
     }
 
@@ -98,9 +102,16 @@ quoteReqEncoder req =
         , ( "targetCurrency", E.string req.targetCurrency )
         , ( "sourceAmount", maybeOrNull E.float req.sourceAmount )
         , ( "targetAmount", maybeOrNull E.float req.targetAmount )
-        , ( "preferredPayIn", E.string req.preferredPayIn )
+        , ( "preferredPayIn", transferMethodEncoder req.preferredPayIn )
         , ( "targetAccount", maybeOrNull E.int req.targetAccount )
         ]
+
+
+transferMethodEncoder : TransferMethod -> E.Value
+transferMethodEncoder method =
+    case method of
+        Balance ->
+            E.string "BALANCE"
 
 
 maybeOrNull : (a -> E.Value) -> Maybe a -> E.Value

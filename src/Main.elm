@@ -180,7 +180,7 @@ submitQuote key profile currency account amount =
         , targetCurrency = currency
         , sourceAmount = Just amount
         , targetAmount = Nothing
-        , preferredPayIn = "BALANCE"
+        , preferredPayIn = Quote.Balance
         , targetAccount = Just account
         }
         GotQuote
