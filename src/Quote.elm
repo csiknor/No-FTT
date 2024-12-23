@@ -40,8 +40,8 @@ type alias Quote =
 
 type alias PaymentOption =
     { disabled : Bool
-    , estimatedDelivery : String
-    , formattedEstimatedDelivery : String
+    , estimatedDelivery : Maybe String
+    , formattedEstimatedDelivery : Maybe String
     , payIn : String
     , payOut : String
     , feeAmount : Float
@@ -93,7 +93,12 @@ paymentOptionView value =
             [ div [] [ text ("Pay out: " ++ option.payOut) ]
             , div [] [ text ("Fee: " ++ String.fromFloat option.feeAmount) ]
             , div [] [ text ("Price: " ++ String.fromFloat option.priceTotalAmount) ]
-            , div [ title option.estimatedDelivery ] [ text ("Estimated delivery: " ++ option.formattedEstimatedDelivery) ]
+            , case ( option.estimatedDelivery, option.formattedEstimatedDelivery ) of
+                ( Just est, Just form ) ->
+                    div [ title est ] [ text ("Estimated delivery: " ++ form) ]
+
+                _ ->
+                    div [] [ text "No estimated delivery" ]
             ]
 
         _ ->
@@ -189,8 +194,8 @@ paymentOptionDecoder : D.Decoder PaymentOption
 paymentOptionDecoder =
     D.map7 PaymentOption
         (D.field "disabled" D.bool)
-        (D.field "estimatedDelivery" D.string)
-        (D.field "formattedEstimatedDelivery" D.string)
+        (D.field "estimatedDelivery" (D.maybe D.string))
+        (D.field "formattedEstimatedDelivery" (D.maybe D.string))
         (D.field "payIn" D.string)
         (D.field "payOut" D.string)
         (D.at [ "fee", "total" ] D.float)
