@@ -291,9 +291,16 @@ quoteFormView model =
             form [ onSubmit SubmitQuote ] <|
                 [ balancesView model.quoteForm.currency model.balances ChangeSourceCurrency
                 , recipientsView model.quoteForm.account model.recipients ChangeTargetAccount
-                , amountView model.quoteForm.amount
-                , input [ type_ "submit", value "Quote" ] []
                 ]
+                    ++ (case model.quoteForm.account of
+                            Just _ ->
+                                [ amountView model.quoteForm.amount
+                                , input [ type_ "submit", value "Quote" ] []
+                                ]
+
+                            _ ->
+                                []
+                       )
 
         _ ->
             text ""
@@ -306,8 +313,8 @@ amountView amount =
 
 transferFormView : Model -> Html Msg
 transferFormView model =
-    case model.quote of
-        Loaded _ ->
+    case ( model.quote, model.transfer ) of
+        ( Loaded _, NotLoaded ) ->
             form [ onSubmit SubmitTransfer ] <|
                 [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
                 , input [ type_ "submit", value "Transfer" ] []
@@ -319,8 +326,8 @@ transferFormView model =
 
 fundingFormView : Model -> Html Msg
 fundingFormView model =
-    case model.transfer of
-        Loaded _ ->
+    case ( model.transfer, model.funding ) of
+        ( Loaded _, NotLoaded ) ->
             form [ onSubmit SubmitFunding ] <|
                 [ input [ type_ "submit", value "Fund" ] []
                 ]
