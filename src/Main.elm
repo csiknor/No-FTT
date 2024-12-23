@@ -9,16 +9,19 @@ import Html.Attributes as A exposing (placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
+import Prng.Uuid as Uuid
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Quote exposing (Quote, QuoteReq, postQuote, quoteView)
+import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
+import Transfer exposing (Transfer, postTransfer, transferView)
 
 
 
 -- MAIN
 
 
-main : Program () Model Msg
+main : Program ( Int, List Int ) Model Msg
 main =
     Browser.element { init = init, update = update, subscriptions = subscriptions, view = view }
 
@@ -34,20 +37,40 @@ type alias QuoteForm =
     }
 
 
+type alias TransferForm =
+    { reference : String
+    }
+
+
 type alias Model =
     { error : Maybe String
+    , seed : Seed
     , state : ApiState
     , profile : Status Profile
     , balances : Status (List Balance)
     , quoteForm : QuoteForm
     , quote : Status Quote
     , recipients : Status (List Recipient)
+    , transferForm : TransferForm
+    , transfer : Status Transfer
     }
 
 
-init : () -> ( Model, Cmd Msg )
-init _ =
-    ( Model Nothing NotConnected NotLoaded NotLoaded (QuoteForm Nothing Nothing 100) NotLoaded NotLoaded, Cmd.none )
+init : ( Int, List Int ) -> ( Model, Cmd Msg )
+init ( seed, seedExtension ) =
+    ( Model
+        Nothing
+        (initialSeed seed seedExtension)
+        NotConnected
+        NotLoaded
+        NotLoaded
+        (QuoteForm Nothing Nothing 100)
+        NotLoaded
+        NotLoaded
+        (TransferForm "")
+        NotLoaded
+    , Cmd.none
+    )
 
 
 ok : Model -> Model
@@ -99,10 +122,13 @@ type Msg
     | ChangeAmount String
     | SubmitQuote
     | GotQuote (Result Http.Error Quote)
+    | ChangeReference String
+    | SubmitTransfer
+    | GotTransfer (Result Http.Error Transfer)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg ({ quoteForm } as model) =
+update msg ({ quoteForm, transferForm } as model) =
     case ( msg, model.state, model.profile ) of
         ( ChangeApiKey key, _, _ ) ->
             ( { model | state = Connected key, profile = Loading }, getPersonalProfile key GotProfiles )
@@ -140,6 +166,24 @@ update msg ({ quoteForm } as model) =
 
         ( GotQuote response, _, _ ) ->
             handleResultAndStop response (withQuote model)
+
+        ( ChangeReference val, _, _ ) ->
+            ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
+
+        ( SubmitTransfer, Connected key, _ ) ->
+            case ( model.quote, model.quoteForm.account ) of
+                ( Loaded quote, Just acc ) ->
+                    let
+                        ( uuid, newSeed ) =
+                            step Uuid.generator model.seed
+                    in
+                    ( { model | transfer = Loading, seed = newSeed }, submitTransfer key acc quote.id (Uuid.toString uuid) model.transferForm.reference )
+
+                _ ->
+                    ( { model | error = Just "Invalid Quote" }, Cmd.none )
+
+        ( GotTransfer response, _, _ ) ->
+            handleResultAndStop response (\transfer -> { model | transfer = transfer })
 
         _ ->
             ( { model | error = Just "Invalid operation" }, Cmd.none )
@@ -186,6 +230,17 @@ submitQuote key profile currency account amount =
         GotQuote
 
 
+submitTransfer : String -> Int -> String -> String -> String -> Cmd Msg
+submitTransfer key targetAccount quoteId transactionId reference =
+    postTransfer key
+        { targetAccount = targetAccount
+        , quoteUuid = quoteId
+        , customerTransactionId = transactionId
+        , reference = reference
+        }
+        GotTransfer
+
+
 
 -- SUBSCRIPTIONS
 
@@ -207,6 +262,8 @@ view model =
         , profileView model.profile
         , quoteFormView model
         , quoteView model.quote
+        , transferFormView model
+        , transferView model.transfer
         ]
 
 
@@ -218,7 +275,7 @@ quoteFormView model =
                 [ balancesView model.quoteForm.currency model.balances ChangeSourceCurrency
                 , recipientsView model.quoteForm.account model.recipients ChangeTargetAccount
                 , amountView model.quoteForm.amount
-                , input [ type_ "submit", value "Submit" ] []
+                , input [ type_ "submit", value "Quote" ] []
                 ]
 
         _ ->
@@ -228,3 +285,16 @@ quoteFormView model =
 amountView : Float -> Html Msg
 amountView amount =
     input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat amount), onInput ChangeAmount ] []
+
+
+transferFormView : Model -> Html Msg
+transferFormView model =
+    case model.quote of
+        Loaded _ ->
+            form [ onSubmit SubmitTransfer ] <|
+                [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
+                , input [ type_ "submit", value "Transfer" ] []
+                ]
+
+        _ ->
+            text ""
