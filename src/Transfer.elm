@@ -1,10 +1,11 @@
-module Transfer exposing (Transfer, TransferReq, postTransfer, transferView)
+module Transfer exposing (Funding, FundingStatus(..), Transfer, TransferReq, fundingView, postFunding, postTransfer, transferView)
 
 import Api exposing (Status(..), wiseApiPost)
 import Html exposing (Html, div, text)
 import Http
 import Json.Decode as D
 import Json.Encode as E
+import Url.Builder as B
 
 
 
@@ -31,6 +32,18 @@ type alias Transfer =
     }
 
 
+type alias Funding =
+    { type_ : String
+    , status : FundingStatus
+    , errorCode : Maybe String
+    }
+
+
+type FundingStatus
+    = Completed
+    | Rejected
+
+
 
 -- VIEW
 
@@ -55,6 +68,42 @@ transferView status =
                 ]
 
         _ ->
+            text ""
+
+
+fundingView : Status Funding -> Html msg
+fundingView fundingStatus =
+    case fundingStatus of
+        Loading ->
+            div [] [ text "Loading funding..." ]
+
+        Loaded funding ->
+            div []
+                [ div [] [ text <| "Funding: " ++ funding.type_ ++ " (" ++ fundingStatusView funding.status ++ ")" ]
+                , fundingErrorCodeView funding.errorCode
+                ]
+
+        _ ->
+            text ""
+
+
+fundingStatusView : FundingStatus -> String
+fundingStatusView status =
+    case status of
+        Completed ->
+            "Completed"
+
+        Rejected ->
+            "Rejected"
+
+
+fundingErrorCodeView : Maybe String -> Html msg
+fundingErrorCodeView code =
+    case code of
+        Just val ->
+            div [] [ text <| "Error: " ++ val ]
+
+        Nothing ->
             text ""
 
 
@@ -93,3 +142,38 @@ transferDecoder =
         (D.field "status" D.string)
         (D.field "created" D.string)
         (D.field "hasActiveIssues" D.bool)
+
+
+fundingUrl : Int -> Int -> String
+fundingUrl profileId transferId =
+    B.absolute [ "v3", "profiles", String.fromInt profileId, "transfers", String.fromInt transferId, "payments" ] []
+
+
+postFunding : String -> Int -> Int -> (Result Http.Error Funding -> msg) -> Cmd msg
+postFunding token profileId transferId msg =
+    wiseApiPost { path = fundingUrl profileId transferId, body = Http.jsonBody (E.object [ ( "type", E.string "BALANCE" ) ]), expect = Http.expectJson msg fundingDecoder, token = token }
+
+
+fundingDecoder : D.Decoder Funding
+fundingDecoder =
+    D.map3 Funding
+        (D.field "type" D.string)
+        (D.field "status" fundingStatusDecoder)
+        (D.maybe (D.field "errorCode" D.string))
+
+
+fundingStatusDecoder : D.Decoder FundingStatus
+fundingStatusDecoder =
+    D.string
+        |> D.andThen
+            (\str ->
+                case str of
+                    "COMPLETED" ->
+                        D.succeed Completed
+
+                    "REJECTED" ->
+                        D.succeed Rejected
+
+                    _ ->
+                        D.fail "Unknown funding status"
+            )

@@ -14,7 +14,7 @@ import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profi
 import Quote exposing (Quote, QuoteReq, postQuote, quoteView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
-import Transfer exposing (Transfer, postTransfer, transferView)
+import Transfer exposing (Funding, Transfer, fundingView, postFunding, postTransfer, transferView)
 
 
 
@@ -53,6 +53,7 @@ type alias Model =
     , recipients : Status (List Recipient)
     , transferForm : TransferForm
     , transfer : Status Transfer
+    , funding : Status Funding
     }
 
 
@@ -68,6 +69,7 @@ init ( seed, seedExtension ) =
         NotLoaded
         NotLoaded
         (TransferForm "")
+        NotLoaded
         NotLoaded
     , Cmd.none
     )
@@ -125,6 +127,8 @@ type Msg
     | ChangeReference String
     | SubmitTransfer
     | GotTransfer (Result Http.Error Transfer)
+    | SubmitFunding
+    | GotFunding (Result Http.Error Funding)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -184,6 +188,17 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( GotTransfer response, _, _ ) ->
             handleResultAndStop response (\transfer -> { model | transfer = transfer })
+
+        ( SubmitFunding, Connected key, Loaded profile ) ->
+            case model.transfer of
+                Loaded transfer ->
+                    ( { model | funding = Loading }, postFunding key profile.id transfer.id GotFunding )
+
+                _ ->
+                    ( { model | error = Just "Invalid Transfer" }, Cmd.none )
+
+        ( GotFunding response, _, _ ) ->
+            handleResultAndStop response (\funding -> { model | funding = funding })
 
         _ ->
             ( { model | error = Just "Invalid operation" }, Cmd.none )
@@ -264,6 +279,8 @@ view model =
         , quoteView model.quote
         , transferFormView model
         , transferView model.transfer
+        , fundingFormView model
+        , fundingView model.funding
         ]
 
 
@@ -294,6 +311,18 @@ transferFormView model =
             form [ onSubmit SubmitTransfer ] <|
                 [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
                 , input [ type_ "submit", value "Transfer" ] []
+                ]
+
+        _ ->
+            text ""
+
+
+fundingFormView : Model -> Html Msg
+fundingFormView model =
+    case model.transfer of
+        Loaded _ ->
+            form [ onSubmit SubmitFunding ] <|
+                [ input [ type_ "submit", value "Fund" ] []
                 ]
 
         _ ->
