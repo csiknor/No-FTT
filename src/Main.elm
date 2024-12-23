@@ -105,6 +105,16 @@ withRecipients model recipients =
     { model | recipients = recipients }
 
 
+withTransfer : Model -> Status Transfer -> Model
+withTransfer model transfer =
+    { model | transfer = transfer }
+
+
+withFunding : Model -> Status Funding -> Model
+withFunding model funding =
+    { model | funding = funding }
+
+
 withError : Model -> String -> Model
 withError model error =
     { model | error = Just error }
@@ -169,7 +179,7 @@ update msg ({ quoteForm, transferForm } as model) =
                     ( { model | error = Just "Invalid quote: missing input" }, Cmd.none )
 
         ( GotQuote response, _, _ ) ->
-            handleResultAndStop response (withQuote model)
+            handleResultAndStop response (withQuote <| withTransfer (withFunding { model | transferForm = TransferForm "" } NotLoaded) NotLoaded)
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
