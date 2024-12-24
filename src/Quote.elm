@@ -1,4 +1,4 @@
-module Quote exposing (PaymentOption, Quote, QuoteReq, TransferMethod(..), postQuote, quoteView)
+module Quote exposing (PaymentOption, Quote, QuoteReq, TransferMethod(..), postQuote, quotesView)
 
 -- MODEL
 
@@ -64,6 +64,22 @@ type NoticeType
 
 
 -- VIEW
+
+
+quotesView : Status (List Quote) -> Html msg
+quotesView status =
+    case status of
+        Loading ->
+            div [] [ text "Loading quotes..." ]
+
+        LoadingItems count quotes ->
+            div [] <| [ text ("Loading " ++ String.fromInt count ++ " quotes...") ] ++ (List.map Loaded >> List.map quoteView) quotes
+
+        Loaded quotes ->
+            div [] <| List.map quoteView <| List.map Loaded quotes
+
+        _ ->
+            text ""
 
 
 quoteView : Status Quote -> Html msg

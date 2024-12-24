@@ -11,7 +11,7 @@ import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
 import Prng.Uuid as Uuid
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
-import Quote exposing (Quote, QuoteReq, postQuote, quoteView)
+import Quote exposing (Quote, QuoteReq, postQuote, quotesView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import Transfer exposing (Funding, Transfer, fundingView, postFunding, postTransfer, transferView)
@@ -34,6 +34,7 @@ type alias QuoteForm =
     { currency : Maybe String
     , account : Maybe Int
     , amount : Float
+    , limit : Float
     }
 
 
@@ -50,6 +51,7 @@ type alias Model =
     , balances : Status (List Balance)
     , quoteForm : QuoteForm
     , quote : Status Quote
+    , quotes : Status (List Quote)
     , recipients : Status (List Recipient)
     , transferForm : TransferForm
     , transfer : Status Transfer
@@ -65,7 +67,8 @@ init ( seed, seedExtension ) =
         NotConnected
         NotLoaded
         NotLoaded
-        (QuoteForm Nothing Nothing 100)
+        (QuoteForm Nothing Nothing 100 100)
+        NotLoaded
         NotLoaded
         NotLoaded
         (TransferForm "")
@@ -95,9 +98,26 @@ withBalances model balances =
     { model | balances = balances }
 
 
-withQuote : Model -> Status Quote -> Model
-withQuote model quote =
-    { model | quote = quote }
+addQuote : Model -> Status Quote -> Model
+addQuote ({ quotes } as model) quote =
+    case ( quotes, quote ) of
+        ( LoadingItems count items, Loaded q ) ->
+            { model
+                | quotes =
+                    if List.length items == count - 1 then
+                        Loaded (sortedQuotes <| items ++ [ q ])
+
+                    else
+                        LoadingItems count (sortedQuotes <| items ++ [ q ])
+            }
+
+        _ ->
+            model
+
+
+sortedQuotes : List Quote -> List Quote
+sortedQuotes quotes =
+    List.sortBy (\q -> negate <| Maybe.withDefault 0 q.sourceAmount) quotes
 
 
 withRecipients : Model -> Status (List Recipient) -> Model
@@ -132,6 +152,7 @@ type Msg
     | ChangeSourceCurrency String
     | ChangeTargetAccount String
     | ChangeAmount String
+    | ChangeLimit String
     | SubmitQuote
     | GotQuote (Result Http.Error Quote)
     | ChangeReference String
@@ -159,6 +180,9 @@ update msg ({ quoteForm, transferForm } as model) =
         ( ChangeAmount val, _, _ ) ->
             ( { model | quoteForm = { quoteForm | amount = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
 
+        ( ChangeLimit val, _, _ ) ->
+            ( { model | quoteForm = { quoteForm | limit = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
+
         ( ChangeSourceCurrency val, Connected key, Loaded profile ) ->
             ( { model | quoteForm = { quoteForm | currency = Just val, account = Nothing } }, getRecipients key profile.id val GotRecipients )
 
@@ -173,13 +197,17 @@ update msg ({ quoteForm, transferForm } as model) =
         ( SubmitQuote, Connected key, Loaded profile ) ->
             case ( model.quoteForm.currency, model.quoteForm.account ) of
                 ( Just curr, Just acc ) ->
-                    ( { model | quote = Loading }, submitQuote key profile curr acc model.quoteForm.amount )
+                    let
+                        amounts =
+                            chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
+                    in
+                    ( { model | quotes = LoadingItems (List.length amounts) [] }, submitQuotes key profile curr acc amounts )
 
                 _ ->
-                    ( { model | error = Just "Invalid quote: missing input" }, Cmd.none )
+                    ( { model | error = Just "Invalid quotes: missing input" }, Cmd.none )
 
         ( GotQuote response, _, _ ) ->
-            handleResultAndStop response (withQuote <| withTransfer (withFunding { model | transferForm = TransferForm "" } NotLoaded) NotLoaded)
+            handleResultAndStop response (addQuote <| withTransfer (withFunding { model | transferForm = TransferForm "" } NotLoaded) NotLoaded)
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
@@ -241,18 +269,41 @@ handleResultAndLoad response mod with with2 cmd =
             >> Result.withDefault Cmd.none
 
 
-submitQuote : String -> Profile -> String -> Int -> Float -> Cmd Msg
-submitQuote key profile currency account amount =
-    postQuote key
-        { profileId = profile.id
-        , sourceCurrency = currency
-        , targetCurrency = currency
-        , sourceAmount = Just amount
-        , targetAmount = Nothing
-        , preferredPayIn = Quote.Balance
-        , targetAccount = Just account
-        }
-        GotQuote
+chunkAmountByLimit : Float -> Float -> List Float
+chunkAmountByLimit amount limit =
+    let
+        chunks =
+            floor (amount / limit)
+
+        remainder =
+            amount - (toFloat chunks * limit)
+    in
+    List.repeat chunks limit
+        ++ (if remainder > 0 then
+                [ remainder ]
+
+            else
+                []
+           )
+
+
+submitQuotes : String -> Profile -> String -> Int -> List Float -> Cmd Msg
+submitQuotes key profile currency account amounts =
+    Cmd.batch <|
+        List.map
+            (\a ->
+                postQuote key
+                    { profileId = profile.id
+                    , sourceCurrency = currency
+                    , targetCurrency = currency
+                    , sourceAmount = Just a
+                    , targetAmount = Nothing
+                    , preferredPayIn = Quote.Balance
+                    , targetAccount = Just account
+                    }
+                    GotQuote
+            )
+            amounts
 
 
 submitTransfer : String -> Int -> String -> String -> String -> Cmd Msg
@@ -286,7 +337,7 @@ view model =
         , apiKeyView model.state ChangeApiKey
         , profileView model.profile
         , quoteFormView model
-        , quoteView model.quote
+        , quotesView model.quotes
         , transferFormView model
         , transferView model.transfer
         , fundingFormView model
@@ -304,8 +355,9 @@ quoteFormView model =
                 ]
                     ++ (case model.quoteForm.account of
                             Just _ ->
-                                [ amountView model.quoteForm.amount
-                                , input [ type_ "submit", value "Quote" ] []
+                                [ input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat model.quoteForm.amount), onInput ChangeAmount ] []
+                                , input [ type_ "number", placeholder "Limit", A.min "1", value (String.fromFloat model.quoteForm.limit), onInput ChangeLimit ] []
+                                , input [ type_ "submit", value "Split & Quote" ] []
                                 ]
 
                             _ ->
@@ -316,14 +368,9 @@ quoteFormView model =
             text ""
 
 
-amountView : Float -> Html Msg
-amountView amount =
-    input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat amount), onInput ChangeAmount ] []
-
-
 transferFormView : Model -> Html Msg
 transferFormView model =
-    case ( model.quote, model.transfer ) of
+    case ( model.quotes, model.transfer ) of
         ( Loaded _, NotLoaded ) ->
             form [ onSubmit SubmitTransfer ] <|
                 [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []

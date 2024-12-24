@@ -18,6 +18,7 @@ type ApiState
 type Status a
     = NotLoaded
     | Loading
+    | LoadingItems Int a
     | Loaded a
     | Failed
 
