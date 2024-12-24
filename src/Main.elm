@@ -9,12 +9,12 @@ import Html.Attributes as A exposing (placeholder, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
-import Prng.Uuid as Uuid
+import Prng.Uuid as Uuid exposing (Uuid)
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Quote exposing (Quote, QuoteReq, postQuote, quotesView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
-import Transfer exposing (Funding, Transfer, fundingView, postFunding, postTransfer, transferView)
+import Transfer exposing (Funding, Transfer, fundingView, postFunding, postTransfer, transfersView)
 
 
 
@@ -50,11 +50,11 @@ type alias Model =
     , profile : Status Profile
     , balances : Status (List Balance)
     , quoteForm : QuoteForm
-    , quote : Status Quote
     , quotes : Status (List Quote)
     , recipients : Status (List Recipient)
     , transferForm : TransferForm
     , transfer : Status Transfer
+    , transfers : Status (List Transfer)
     , funding : Status Funding
     }
 
@@ -70,8 +70,8 @@ init ( seed, seedExtension ) =
         (QuoteForm Nothing Nothing 100 100)
         NotLoaded
         NotLoaded
-        NotLoaded
         (TransferForm "")
+        NotLoaded
         NotLoaded
         NotLoaded
     , Cmd.none
@@ -115,6 +115,23 @@ addQuote ({ quotes } as model) quote =
             model
 
 
+addTransfer : Model -> Status Transfer -> Model
+addTransfer ({ transfers } as model) transfer =
+    case ( transfers, transfer ) of
+        ( LoadingItems count items, Loaded t ) ->
+            { model
+                | transfers =
+                    if List.length items == count - 1 then
+                        Loaded (items ++ [ t ])
+
+                    else
+                        LoadingItems count (items ++ [ t ])
+            }
+
+        _ ->
+            model
+
+
 sortedQuotes : List Quote -> List Quote
 sortedQuotes quotes =
     List.sortBy (\q -> negate <| Maybe.withDefault 0 q.sourceAmount) quotes
@@ -125,9 +142,9 @@ withRecipients model recipients =
     { model | recipients = recipients }
 
 
-withTransfer : Model -> Status Transfer -> Model
-withTransfer model transfer =
-    { model | transfer = transfer }
+withTransfers : Model -> Status (List Transfer) -> Model
+withTransfers model transfers =
+    { model | transfers = transfers }
 
 
 withFunding : Model -> Status Funding -> Model
@@ -201,31 +218,33 @@ update msg ({ quoteForm, transferForm } as model) =
                         amounts =
                             chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
                     in
-                    ( { model | quotes = LoadingItems (List.length amounts) [] }, submitQuotes key profile curr acc amounts )
+                    ( withTransfers (withFunding { model | quotes = LoadingItems (List.length amounts) [], transferForm = TransferForm "" } NotLoaded) NotLoaded, submitQuotes key profile curr acc amounts )
 
                 _ ->
                     ( { model | error = Just "Invalid quotes: missing input" }, Cmd.none )
 
         ( GotQuote response, _, _ ) ->
-            handleResultAndStop response (addQuote <| withTransfer (withFunding { model | transferForm = TransferForm "" } NotLoaded) NotLoaded)
+            handleResultAndStop response (addQuote model)
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
 
         ( SubmitTransfer, Connected key, _ ) ->
-            case ( model.quote, model.quoteForm.account ) of
-                ( Loaded quote, Just acc ) ->
+            case ( model.quotes, model.quoteForm.account ) of
+                ( Loaded quotes, Just acc ) ->
                     let
-                        ( uuid, newSeed ) =
-                            step Uuid.generator model.seed
+                        ( quoteIdsAndUuids, newSeed ) =
+                            generateAndPairUuids model.seed <| List.map .id quotes
                     in
-                    ( { model | transfer = Loading, seed = newSeed }, submitTransfer key acc quote.id (Uuid.toString uuid) model.transferForm.reference )
+                    ( { model | transfers = LoadingItems (List.length quoteIdsAndUuids) [], seed = newSeed }
+                    , submitTransfers key acc quoteIdsAndUuids model.transferForm.reference
+                    )
 
                 _ ->
-                    ( { model | error = Just "Invalid Quote" }, Cmd.none )
+                    ( { model | error = Just "Invalid Quotes" }, Cmd.none )
 
         ( GotTransfer response, _, _ ) ->
-            handleResultAndStop response (\transfer -> { model | transfer = transfer })
+            handleResultAndStop response <| addTransfer model
 
         ( SubmitFunding, Connected key, Loaded profile ) ->
             case model.transfer of
@@ -306,15 +325,31 @@ submitQuotes key profile currency account amounts =
             amounts
 
 
-submitTransfer : String -> Int -> String -> String -> String -> Cmd Msg
-submitTransfer key targetAccount quoteId transactionId reference =
-    postTransfer key
-        { targetAccount = targetAccount
-        , quoteUuid = quoteId
-        , customerTransactionId = transactionId
-        , reference = reference
-        }
-        GotTransfer
+generateAndPairUuids : Seed -> List a -> ( List ( a, Uuid ), Seed )
+generateAndPairUuids start list =
+    List.foldr
+        (\item ( acc, seed ) ->
+            step Uuid.generator seed
+                |> Tuple.mapFirst (\uuid -> ( item, uuid ) :: acc)
+        )
+        ( [], start )
+        list
+
+
+submitTransfers : String -> Int -> List ( String, Uuid ) -> String -> Cmd Msg
+submitTransfers key targetAccount quoteAndTransactionIds reference =
+    Cmd.batch <|
+        List.map
+            (\( quoteId, transactionId ) ->
+                postTransfer key
+                    { targetAccount = targetAccount
+                    , quoteUuid = quoteId
+                    , customerTransactionId = Uuid.toString transactionId
+                    , reference = reference
+                    }
+                    GotTransfer
+            )
+            quoteAndTransactionIds
 
 
 
@@ -339,7 +374,7 @@ view model =
         , quoteFormView model
         , quotesView model.quotes
         , transferFormView model
-        , transferView model.transfer
+        , transfersView model.transfers
         , fundingFormView model
         , fundingView model.funding
         ]

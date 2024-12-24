@@ -1,4 +1,4 @@
-module Transfer exposing (Funding, FundingStatus(..), Transfer, TransferReq, fundingView, postFunding, postTransfer, transferView)
+module Transfer exposing (Funding, FundingStatus(..), Transfer, TransferReq, fundingView, postFunding, postTransfer, transfersView)
 
 import Api exposing (Status(..), wiseApiPost)
 import Html exposing (Html, div, text)
@@ -46,6 +46,22 @@ type FundingStatus
 
 
 -- VIEW
+
+
+transfersView : Status (List Transfer) -> Html msg
+transfersView status =
+    case status of
+        Loading ->
+            div [] [ text "Loading transfers..." ]
+
+        LoadingItems count transfers ->
+            div [] <| [ text ("Loading " ++ String.fromInt count ++ " transfers...") ] ++ (List.map Loaded >> List.map transferView) transfers
+
+        Loaded transfers ->
+            div [] <| List.map transferView <| List.map Loaded transfers
+
+        _ ->
+            text ""
 
 
 transferView : Status Transfer -> Html msg
