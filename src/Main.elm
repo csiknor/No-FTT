@@ -14,7 +14,7 @@ import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profi
 import Quote exposing (Quote, QuoteReq, postQuote, quotesView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
-import Transfer exposing (Funding, Transfer, fundingView, postFunding, postTransfer, transfersView)
+import Transfer exposing (Funding, Transfer, fundingsView, postFunding, postTransfer, transfersView)
 
 
 
@@ -55,7 +55,7 @@ type alias Model =
     , transferForm : TransferForm
     , transfer : Status Transfer
     , transfers : Status (List Transfer)
-    , funding : Status Funding
+    , fundings : Status (List Funding)
     }
 
 
@@ -147,9 +147,26 @@ withTransfers model transfers =
     { model | transfers = transfers }
 
 
-withFunding : Model -> Status Funding -> Model
-withFunding model funding =
-    { model | funding = funding }
+withFundings : Model -> Status (List Funding) -> Model
+withFundings model fundings =
+    { model | fundings = fundings }
+
+
+addFunding : Model -> Status Funding -> Model
+addFunding ({ fundings } as model) funding =
+    case ( fundings, funding ) of
+        ( LoadingItems count items, Loaded f ) ->
+            { model
+                | fundings =
+                    if List.length items == count - 1 then
+                        Loaded (items ++ [ f ])
+
+                    else
+                        LoadingItems count (items ++ [ f ])
+            }
+
+        _ ->
+            model
 
 
 withError : Model -> String -> Model
@@ -218,7 +235,7 @@ update msg ({ quoteForm, transferForm } as model) =
                         amounts =
                             chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
                     in
-                    ( withTransfers (withFunding { model | quotes = LoadingItems (List.length amounts) [], transferForm = TransferForm "" } NotLoaded) NotLoaded, submitQuotes key profile curr acc amounts )
+                    ( withTransfers (withFundings { model | quotes = LoadingItems (List.length amounts) [], transferForm = TransferForm "" } NotLoaded) NotLoaded, submitQuotes key profile curr acc amounts )
 
                 _ ->
                     ( { model | error = Just "Invalid quotes: missing input" }, Cmd.none )
@@ -247,15 +264,17 @@ update msg ({ quoteForm, transferForm } as model) =
             handleResultAndStop response <| addTransfer model
 
         ( SubmitFunding, Connected key, Loaded profile ) ->
-            case model.transfer of
-                Loaded transfer ->
-                    ( { model | funding = Loading }, postFunding key profile.id transfer.id GotFunding )
+            case model.transfers of
+                Loaded transfers ->
+                    ( withFundings model <| LoadingItems (List.length transfers) []
+                    , submitFundings key profile.id transfers
+                    )
 
                 _ ->
                     ( { model | error = Just "Invalid Transfer" }, Cmd.none )
 
         ( GotFunding response, _, _ ) ->
-            handleResultAndStop response (\funding -> { model | funding = funding })
+            handleResultAndStop response <| addFunding model
 
         _ ->
             ( { model | error = Just "Invalid operation" }, Cmd.none )
@@ -352,6 +371,15 @@ submitTransfers key targetAccount quoteAndTransactionIds reference =
             quoteAndTransactionIds
 
 
+submitFundings : String -> Int -> List Transfer -> Cmd Msg
+submitFundings key profileId transfers =
+    Cmd.batch
+        (List.map
+            (\t -> postFunding key profileId t.id GotFunding)
+            transfers
+        )
+
+
 
 -- SUBSCRIPTIONS
 
@@ -376,7 +404,7 @@ view model =
         , transferFormView model
         , transfersView model.transfers
         , fundingFormView model
-        , fundingView model.funding
+        , fundingsView model.fundings
         ]
 
 
@@ -418,7 +446,7 @@ transferFormView model =
 
 fundingFormView : Model -> Html Msg
 fundingFormView model =
-    case ( model.transfer, model.funding ) of
+    case ( model.transfers, model.fundings ) of
         ( Loaded _, NotLoaded ) ->
             form [ onSubmit SubmitFunding ] <|
                 [ input [ type_ "submit", value "Fund" ] []
