@@ -15,6 +15,7 @@ import Quote exposing (Quote, QuoteReq, postQuote, quotesView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
+import String.Interpolate exposing (interpolate)
 import Transfer exposing (Funding, Transfer, fundingsView, postFunding, postTransfer, transfersView)
 
 
@@ -378,13 +379,16 @@ generateAndPairUuids start list =
 submitTransfers : String -> Int -> List ( String, Uuid ) -> String -> Cmd Msg
 submitTransfers key targetAccount quoteAndTransactionIds reference =
     Cmd.batch <|
-        List.map
-            (\( quoteId, transactionId ) ->
+        List.indexedMap
+            (\i ( quoteId, transactionId ) ->
                 postTransfer key
                     { targetAccount = targetAccount
                     , quoteUuid = quoteId
                     , customerTransactionId = Uuid.toString transactionId
-                    , reference = reference
+                    , reference =
+                        interpolate
+                            (reference ++ " {0}/{1}")
+                            [ String.fromInt (i + 1), String.fromInt (List.length quoteAndTransactionIds) ]
                     }
                     GotTransfer
             )
