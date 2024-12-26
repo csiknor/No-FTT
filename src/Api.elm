@@ -1,4 +1,4 @@
-module Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString, wiseApiGet, wiseApiPost)
+module Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString, wiseApiGet, wiseApiPost, wiseApiPut)
 
 import Html exposing (Html, input)
 import Html.Attributes exposing (placeholder, type_, value)
@@ -81,15 +81,7 @@ wiseApiGet :
     }
     -> Cmd msg
 wiseApiGet req =
-    Http.request
-        { method = "GET"
-        , headers = [ header "Authorization" ("Bearer " ++ req.token) ]
-        , url = wiseUrl ++ req.path
-        , body = emptyBody
-        , expect = req.expect
-        , timeout = Nothing
-        , tracker = Nothing
-        }
+    wiseApiRequest { method = "GET", path = req.path, body = emptyBody, expect = req.expect, token = req.token }
 
 
 wiseApiPost :
@@ -100,8 +92,31 @@ wiseApiPost :
     }
     -> Cmd msg
 wiseApiPost req =
+    wiseApiRequest { method = "POST", path = req.path, body = req.body, expect = req.expect, token = req.token }
+
+
+wiseApiPut :
+    { path : String
+    , body : Http.Body
+    , expect : Expect msg
+    , token : String
+    }
+    -> Cmd msg
+wiseApiPut req =
+    wiseApiRequest { method = "PUT", path = req.path, body = req.body, expect = req.expect, token = req.token }
+
+
+wiseApiRequest :
+    { method : String
+    , path : String
+    , body : Http.Body
+    , expect : Expect msg
+    , token : String
+    }
+    -> Cmd msg
+wiseApiRequest req =
     Http.request
-        { method = "POST"
+        { method = req.method
         , headers = [ header "Authorization" ("Bearer " ++ req.token) ]
         , url = wiseUrl ++ req.path
         , body = req.body

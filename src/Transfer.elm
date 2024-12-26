@@ -1,6 +1,6 @@
-module Transfer exposing (Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, postFunding, postTransfer, transfersView)
+module Transfer exposing (Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, postFunding, postTransfer, putTransferCancel, transfersView)
 
-import Api exposing (Status(..), wiseApiPost)
+import Api exposing (Status(..), wiseApiPost, wiseApiPut)
 import Html exposing (Html, div, text)
 import Http
 import Json.Decode as D
@@ -151,6 +151,16 @@ transfersUrl =
 postTransfer : String -> TransferReq -> (Result Http.Error Transfer -> msg) -> Cmd msg
 postTransfer token req msg =
     wiseApiPost { path = transfersUrl, body = Http.jsonBody (transferEncoder req), expect = Http.expectJson msg transferDecoder, token = token }
+
+
+cancelTransferApi : Int -> String
+cancelTransferApi transferId =
+    B.absolute [ "v1", "transfers", String.fromInt transferId, "cancel" ] []
+
+
+putTransferCancel : String -> Int -> (Result Http.Error Transfer -> msg) -> Cmd msg
+putTransferCancel token transferId msg =
+    wiseApiPut { path = cancelTransferApi transferId, body = Http.emptyBody, expect = Http.expectJson msg transferDecoder, token = token }
 
 
 transferEncoder : TransferReq -> E.Value

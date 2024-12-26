@@ -4,9 +4,9 @@ import Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import Error exposing (errorView)
-import Html exposing (Html, div, form, input, text)
+import Html exposing (Html, button, div, form, input, text)
 import Html.Attributes as A exposing (placeholder, type_, value)
-import Html.Events exposing (onInput, onSubmit)
+import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
 import Prng.Uuid as Uuid exposing (Uuid)
@@ -16,7 +16,7 @@ import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import String.Interpolate exposing (interpolate)
-import Transfer exposing (Funding, Transfer, fundingsView, postFunding, postTransfer, transfersView)
+import Transfer exposing (Funding, Transfer, fundingsView, postFunding, postTransfer, putTransferCancel, transfersView)
 
 
 
@@ -195,6 +195,7 @@ type Msg
     | ChangeReference String
     | SubmitTransfer
     | GotTransfer (Result Http.Error Transfer)
+    | CancelTransfer
     | SubmitFunding
     | GotFunding (Result Http.Error Funding)
 
@@ -278,6 +279,16 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( GotTransfer response, _, _ ) ->
             handleResultAndStop response <| addTransfer model
+
+        ( CancelTransfer, Connected key, _ ) ->
+            case model.transfers of
+                Loaded transfers ->
+                    ( { model | transfers = LoadingItems (List.length transfers) [] }
+                    , cancelTransfers key transfers
+                    )
+
+                _ ->
+                    ( { model | error = Just "Invalid Transfers" }, Cmd.none )
 
         ( SubmitFunding, Connected key, Loaded profile ) ->
             case model.transfers of
@@ -395,6 +406,14 @@ submitTransfers key targetAccount quoteAndTransactionIds reference =
             quoteAndTransactionIds
 
 
+cancelTransfers : String -> List Transfer -> Cmd Msg
+cancelTransfers key transfers =
+    Cmd.batch <|
+        List.map
+            (\t -> putTransferCancel key t.id GotTransfer)
+            transfers
+
+
 submitFundings : String -> Int -> List Transfer -> Cmd Msg
 submitFundings key profileId transfers =
     Cmd.batch
@@ -474,6 +493,7 @@ fundingFormView model =
         ( Loaded _, NotLoaded ) ->
             form [ onSubmit SubmitFunding ] <|
                 [ input [ type_ "submit", value "Fund" ] []
+                , button [ type_ "button", onClick CancelTransfer ] [ text "Cancel" ]
                 ]
 
         _ ->
