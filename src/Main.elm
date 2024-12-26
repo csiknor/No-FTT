@@ -13,6 +13,7 @@ import Prng.Uuid as Uuid exposing (Uuid)
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Quote exposing (Quote, QuoteReq, postQuote, quotesView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
+import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import Transfer exposing (Funding, Transfer, fundingsView, postFunding, postTransfer, transfersView)
 
@@ -182,6 +183,7 @@ type Msg
     = ChangeApiKey String
     | GotProfiles (Result Http.Error (List Profile))
     | GotBalances (Result Http.Error (List Balance))
+    | GotRate (Result Http.Error Rate)
     | GotRecipients (Result Http.Error (List Recipient))
     | ChangeSourceCurrency String
     | ChangeTargetAccount String
@@ -208,6 +210,14 @@ update msg ({ quoteForm, transferForm } as model) =
         ( GotBalances response, _, _ ) ->
             handleResultAndStop response (withBalances model)
 
+        ( GotRate response, _, _ ) ->
+            case response of
+                Ok rate ->
+                    ( { model | quoteForm = { quoteForm | limit = rateAdjustedLimit rate.rate } }, Cmd.none )
+
+                Err e ->
+                    ( err e model, Cmd.none )
+
         ( GotRecipients response, _, _ ) ->
             handleResultAndStop response (withRecipients model)
 
@@ -218,7 +228,12 @@ update msg ({ quoteForm, transferForm } as model) =
             ( { model | quoteForm = { quoteForm | limit = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
 
         ( ChangeSourceCurrency val, Connected key, Loaded profile ) ->
-            ( { model | quoteForm = { quoteForm | currency = Just val, account = Nothing } }, getRecipients key profile.id val GotRecipients )
+            ( { model | quoteForm = { quoteForm | currency = Just val, account = Nothing } }
+            , Cmd.batch
+                [ getRate key "HUF" val GotRate
+                , getRecipients key profile.id val GotRecipients
+                ]
+            )
 
         ( ChangeTargetAccount val, _, _ ) ->
             case String.toInt val of
@@ -297,14 +312,19 @@ handleResultAndExecute response mod with cmd =
 
 handleResultAndStop : Result Http.Error a -> (Status a -> Model) -> ( Model, Cmd Msg )
 handleResultAndStop response with =
-    handleResultAndExecute response (\a -> Ok a) with (\_ -> Cmd.none)
+    handleResultAndExecute response Ok with (\_ -> Cmd.none)
 
 
 handleResultAndLoad : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Model -> Status x -> Model) -> (b -> Cmd Msg) -> ( Model, Cmd Msg )
 handleResultAndLoad response mod with with2 cmd =
     handleResultAndExecute response mod (with >> (\model -> with2 model Loading)) <|
-        Result.map (\x -> cmd x)
+        Result.map cmd
             >> Result.withDefault Cmd.none
+
+
+rateAdjustedLimit : Float -> Float
+rateAdjustedLimit rate =
+    floor >> toFloat >> (*) 10 <| 50000 * rate / 10
 
 
 chunkAmountByLimit : Float -> Float -> List Float
