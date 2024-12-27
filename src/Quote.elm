@@ -160,7 +160,12 @@ quotesUrl id =
 
 postQuote : String -> QuoteReq -> (Result Http.Error Quote -> msg) -> Cmd msg
 postQuote token req msg =
-    wiseApiPost { path = quotesUrl req.profileId, body = Http.jsonBody (quoteReqEncoder req), expect = Http.expectJson msg quoteDecoder, token = token }
+    wiseApiPost
+        { path = quotesUrl req.profileId
+        , body = Http.jsonBody (quoteReqEncoder req)
+        , expect = Http.expectJson msg quoteDecoder
+        , token = token
+        }
 
 
 quoteReqEncoder : QuoteReq -> E.Value

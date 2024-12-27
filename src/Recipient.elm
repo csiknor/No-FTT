@@ -66,7 +66,11 @@ recipientsUrl profileId currency =
 
 getRecipients : String -> Int -> String -> (Result Http.Error (List Recipient) -> msg) -> Cmd msg
 getRecipients token profileId currency msg =
-    wiseApiGet { path = recipientsUrl profileId currency, expect = Http.expectJson msg (D.field "content" <| D.list recipientDecoder), token = token }
+    wiseApiGet
+        { path = recipientsUrl profileId currency
+        , expect = Http.expectJson msg (D.field "content" <| D.list recipientDecoder)
+        , token = token
+        }
 
 
 recipientDecoder : D.Decoder Recipient

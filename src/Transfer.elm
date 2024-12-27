@@ -150,7 +150,12 @@ transfersUrl =
 
 postTransfer : String -> TransferReq -> (Result Http.Error Transfer -> msg) -> Cmd msg
 postTransfer token req msg =
-    wiseApiPost { path = transfersUrl, body = Http.jsonBody (transferEncoder req), expect = Http.expectJson msg transferDecoder, token = token }
+    wiseApiPost
+        { path = transfersUrl
+        , body = Http.jsonBody (transferEncoder req)
+        , expect = Http.expectJson msg transferDecoder
+        , token = token
+        }
 
 
 cancelTransferApi : Int -> String
@@ -160,7 +165,12 @@ cancelTransferApi transferId =
 
 putTransferCancel : String -> Int -> (Result Http.Error Transfer -> msg) -> Cmd msg
 putTransferCancel token transferId msg =
-    wiseApiPut { path = cancelTransferApi transferId, body = Http.emptyBody, expect = Http.expectJson msg transferDecoder, token = token }
+    wiseApiPut
+        { path = cancelTransferApi transferId
+        , body = Http.emptyBody
+        , expect = Http.expectJson msg transferDecoder
+        , token = token
+        }
 
 
 transferEncoder : TransferReq -> E.Value
@@ -193,7 +203,12 @@ fundingUrl profileId transferId =
 
 postFunding : String -> Int -> Int -> (Result Http.Error Funding -> msg) -> Cmd msg
 postFunding token profileId transferId msg =
-    wiseApiPost { path = fundingUrl profileId transferId, body = Http.jsonBody (E.object [ ( "type", E.string "BALANCE" ) ]), expect = Http.expectJson msg fundingDecoder, token = token }
+    wiseApiPost
+        { path = fundingUrl profileId transferId
+        , body = Http.jsonBody (E.object [ ( "type", E.string "BALANCE" ) ])
+        , expect = Http.expectJson msg fundingDecoder
+        , token = token
+        }
 
 
 fundingDecoder : D.Decoder Funding

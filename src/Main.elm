@@ -144,16 +144,6 @@ withRecipients model recipients =
     { model | recipients = recipients }
 
 
-withTransfers : Model -> Status (List Transfer) -> Model
-withTransfers model transfers =
-    { model | transfers = transfers }
-
-
-withFundings : Model -> Status (List Funding) -> Model
-withFundings model fundings =
-    { model | fundings = fundings }
-
-
 addFunding : Model -> Status Funding -> Model
 addFunding ({ fundings } as model) funding =
     case ( fundings, funding ) of
@@ -219,7 +209,12 @@ update msg ({ quoteForm, transferForm } as model) =
                 )
 
         ( GotProfiles response, Connected key, _ ) ->
-            handleResultAndLoad response (findPersonalProfile >> Result.fromMaybe "Personal profile not found") (withProfile model) withBalances (getBalances key GotBalances)
+            handleResultAndLoad
+                response
+                (findPersonalProfile >> Result.fromMaybe "Personal profile not found")
+                (withProfile model)
+                withBalances
+                (getBalances key GotBalances)
 
         ( GotBalances response, _, _ ) ->
             handleResultAndStop response (withBalances model)
@@ -264,7 +259,14 @@ update msg ({ quoteForm, transferForm } as model) =
                         amounts =
                             chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
                     in
-                    ( withTransfers (withFundings { model | quotes = LoadingItems (List.length amounts) [], transferForm = TransferForm "" } NotLoaded) NotLoaded, submitQuotes key profile curr acc amounts )
+                    ( { model
+                        | quotes = LoadingItems (List.length amounts) []
+                        , transferForm = TransferForm ""
+                        , transfers = NotLoaded
+                        , fundings = NotLoaded
+                      }
+                    , submitQuotes key profile curr acc amounts
+                    )
 
                 _ ->
                     ( { model | error = Just "Invalid quotes: missing input" }, Cmd.none )
@@ -305,7 +307,7 @@ update msg ({ quoteForm, transferForm } as model) =
         ( SubmitFunding, Connected key, Loaded profile ) ->
             case model.transfers of
                 Loaded transfers ->
-                    ( withFundings model <| LoadingItems (List.length transfers) []
+                    ( { model | fundings = LoadingItems (List.length transfers) [] }
                     , submitFundings key profile.id transfers
                     )
 
