@@ -66,7 +66,7 @@ init ( seed, seedExtension ) =
     ( Model
         Nothing
         (initialSeed seed seedExtension)
-        NotConnected
+        (NotConnected Nothing)
         NotLoaded
         NotLoaded
         (QuoteForm Nothing Nothing 100 100)
@@ -204,7 +204,19 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ quoteForm, transferForm } as model) =
     case ( msg, model.state, model.profile ) of
         ( ChangeApiKey key, _, _ ) ->
-            ( { model | state = Connected key, profile = Loading }, getPersonalProfile key GotProfiles )
+            if Uuid.isValidUuid key then
+                ( { model | state = Connected key, profile = Loading }, getPersonalProfile key GotProfiles )
+
+            else
+                ( { model
+                    | state = NotConnected <| Just key
+                    , profile = NotLoaded
+                    , quotes = NotLoaded
+                    , transfers = NotLoaded
+                    , fundings = NotLoaded
+                  }
+                , Cmd.none
+                )
 
         ( GotProfiles response, Connected key, _ ) ->
             handleResultAndLoad response (findPersonalProfile >> Result.fromMaybe "Personal profile not found") (withProfile model) withBalances (getBalances key GotBalances)

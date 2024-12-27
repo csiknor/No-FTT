@@ -11,7 +11,7 @@ import Http exposing (Error(..), Expect, emptyBody, header)
 
 
 type ApiState
-    = NotConnected
+    = NotConnected (Maybe String)
     | Connected String
 
 
@@ -58,8 +58,8 @@ apiKeyView state msg =
 myApiKey : ApiState -> String
 myApiKey model =
     case model of
-        NotConnected ->
-            ""
+        NotConnected maybeKey ->
+            Maybe.withDefault "" maybeKey
 
         Connected key ->
             key
