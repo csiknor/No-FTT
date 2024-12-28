@@ -51,9 +51,9 @@ type alias Model =
     , state : ApiState
     , profile : Status Profile
     , balances : Status (List Balance)
+    , recipients : Status (List Recipient)
     , quoteForm : QuoteForm
     , quotes : List (Status Quote)
-    , recipients : Status (List Recipient)
     , transferForm : TransferForm
     , transfers : Status (List Transfer)
     , fundings : Status (List Funding)
