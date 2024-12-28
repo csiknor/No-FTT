@@ -2,7 +2,7 @@ module Quote exposing (PaymentOption, Quote, QuoteReq, TransferMethod(..), postQ
 
 -- MODEL
 
-import Api exposing (Status(..), wiseApiPost)
+import Api exposing (Status(..), wiseApiPost, wrapError)
 import Html exposing (Html, div, text)
 import Html.Attributes exposing (title)
 import Http
@@ -83,6 +83,9 @@ quoteView status =
         Loading r ->
             div [] [ text <| interpolate "Loading quote {0} {1}..." [ stringFromMaybeFloatOrZero r.sourceAmount, r.sourceCurrency ] ]
 
+        Failed r ->
+            div [] [ text <| interpolate "Failed to load quote {0} {1}" [ stringFromMaybeFloatOrZero r.sourceAmount, r.sourceCurrency ] ]
+
         Loaded quote ->
             div [] <|
                 [ div [] [ text ("Quote: " ++ quote.id) ]
@@ -158,12 +161,12 @@ quotesUrl id =
     B.absolute [ "v3", "profiles", String.fromInt id, "quotes" ] []
 
 
-postQuote : String -> QuoteReq -> (Result Http.Error Quote -> msg) -> Cmd msg
+postQuote : String -> QuoteReq -> (Result ( Http.Error, QuoteReq ) Quote -> msg) -> Cmd msg
 postQuote token req msg =
     wiseApiPost
         { path = quotesUrl req.profileId
         , body = Http.jsonBody (quoteReqEncoder req)
-        , expect = Http.expectJson msg quoteDecoder
+        , expect = Http.expectJson (wrapError req msg) quoteDecoder
         , token = token
         }
 

@@ -1,4 +1,19 @@
-module Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues, wiseApiGet, wiseApiPost, wiseApiPut)
+module Api exposing
+    ( ApiState(..)
+    , Status(..)
+    , allLoaded
+    , apiKeyView
+    , changeFirstLoadingToLoaded
+    , changeFirstMatchingLoading
+    , changeFirstMatchingLoadingToFailed
+    , changeFirstMatchingLoadingToLoaded
+    , httpErrorToString
+    , loadedValues
+    , wiseApiGet
+    , wiseApiPost
+    , wiseApiPut
+    , wrapError
+    )
 
 import Html exposing (Html, input)
 import Html.Attributes exposing (placeholder, type_, value)
@@ -47,32 +62,34 @@ httpErrorToString e =
 
 changeFirstLoadingToLoaded : b -> List (Status a b) -> List (Status a b)
 changeFirstLoadingToLoaded v list =
-    case list of
-        [] ->
-            []
-
-        (Loading _) :: rest ->
-            Loaded v :: rest
-
-        x :: rest ->
-            x :: changeFirstLoadingToLoaded v rest
+    changeFirstMatchingLoadingToLoaded (\_ -> True) v list
 
 
 changeFirstMatchingLoadingToLoaded : (a -> Bool) -> b -> List (Status a b) -> List (Status a b)
 changeFirstMatchingLoadingToLoaded matching v list =
+    changeFirstMatchingLoading matching (\_ -> Loaded v) list
+
+
+changeFirstMatchingLoadingToFailed : (a -> Bool) -> List (Status a b) -> List (Status a b)
+changeFirstMatchingLoadingToFailed matching list =
+    changeFirstMatchingLoading matching Failed list
+
+
+changeFirstMatchingLoading : (a -> Bool) -> (a -> Status a b) -> List (Status a b) -> List (Status a b)
+changeFirstMatchingLoading matching new list =
     case list of
         [] ->
             []
 
         (Loading a) :: rest ->
             if matching a then
-                Loaded v :: rest
+                new a :: rest
 
             else
-                Loading a :: changeFirstMatchingLoadingToLoaded matching v rest
+                Loading a :: changeFirstMatchingLoading matching new rest
 
         x :: rest ->
-            x :: changeFirstMatchingLoadingToLoaded matching v rest
+            x :: changeFirstMatchingLoading matching new rest
 
 
 allLoaded : List (Status a b) -> Bool
@@ -185,3 +202,13 @@ wiseApiRequest req =
         , timeout = Nothing
         , tracker = Nothing
         }
+
+
+wrapError : a -> (Result ( Http.Error, a ) b -> msg) -> Result Http.Error b -> msg
+wrapError a msg result =
+    case result of
+        Ok b ->
+            msg (Ok b)
+
+        Err e ->
+            msg (Err ( e, a ))

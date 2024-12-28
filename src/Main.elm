@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
+import Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import Error exposing (errorView)
@@ -109,6 +109,9 @@ addQuote model quote =
         Loaded q ->
             { model | quotes = changeFirstMatchingLoadingToLoaded (\r -> r.sourceAmount == q.sourceAmount) q model.quotes }
 
+        Failed req ->
+            { model | quotes = changeFirstMatchingLoadingToFailed (\r -> r.sourceAmount == req.sourceAmount) model.quotes }
+
         _ ->
             model
 
@@ -175,7 +178,7 @@ type Msg
     | ChangeAmount String
     | ChangeLimit String
     | SubmitQuote
-    | GotQuote (Result Http.Error Quote)
+    | GotQuote (Result ( Http.Error, QuoteReq ) Quote)
     | ChangeReference String
     | SubmitTransfer
     | GotTransfer (Result Http.Error Transfer)
@@ -278,8 +281,8 @@ update msg ({ quoteForm, transferForm } as model) =
                 Ok quote ->
                     ( ok <| addQuote model <| Loaded quote, Cmd.none )
 
-                Err e ->
-                    ( err e model, Cmd.none )
+                Err ( e, req ) ->
+                    ( err e <| addQuote model <| Failed req, Cmd.none )
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
