@@ -113,6 +113,11 @@ addQuote model quote =
             model
 
 
+withQuotes : Model -> List (Status Quote) -> Model
+withQuotes model quotes =
+    { model | quotes = quotes }
+
+
 addTransfer : Model -> Status Transfer -> Model
 addTransfer ({ transfers } as model) transfer =
     case ( transfers, transfer ) of
@@ -170,6 +175,18 @@ withError model error =
     { model | error = Just error }
 
 
+resetQuotes : Model -> Model
+resetQuotes model =
+    { model
+        | error = Nothing
+        , quoteForm = QuoteForm Nothing Nothing 100 100
+        , quotes = []
+        , transferForm = TransferForm ""
+        , transfers = NotLoaded
+        , fundings = NotLoaded
+    }
+
+
 
 -- UPDATE
 
@@ -199,16 +216,17 @@ update msg ({ quoteForm, transferForm } as model) =
     case ( msg, model.state, model.profile ) of
         ( ChangeApiKey key, _, _ ) ->
             if Uuid.isValidUuid key then
-                ( { model | state = Connected key, profile = Loading }, getPersonalProfile key GotProfiles )
+                ( resetQuotes { model | state = Connected key, profile = Loading, balances = NotLoaded }
+                , getPersonalProfile key GotProfiles
+                )
 
             else
-                ( { model
-                    | state = NotConnected <| Just key
-                    , profile = NotLoaded
-                    , quotes = NotLoaded
-                    , transfers = NotLoaded
-                    , fundings = NotLoaded
-                  }
+                ( resetQuotes
+                    { model
+                        | state = NotConnected <| Just key
+                        , profile = NotLoaded
+                        , balances = NotLoaded
+                    }
                 , Cmd.none
                 )
 
@@ -241,7 +259,7 @@ update msg ({ quoteForm, transferForm } as model) =
             ( { model | quoteForm = { quoteForm | limit = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
 
         ( ChangeSourceCurrency val, Connected key, Loaded profile ) ->
-            ( { model | quoteForm = { quoteForm | currency = Just val, account = Nothing } }
+            ( withQuoteForm (resetQuotes model) { quoteForm | currency = Just val, account = Nothing }
             , Cmd.batch
                 [ getRate key "HUF" val GotRate
                 , getRecipients key profile.id val GotRecipients
@@ -251,7 +269,7 @@ update msg ({ quoteForm, transferForm } as model) =
         ( ChangeTargetAccount val, _, _ ) ->
             case String.toInt val of
                 Just acc ->
-                    ( { model | quoteForm = { quoteForm | account = Just acc } }, Cmd.none )
+                    ( withQuoteForm (resetQuotes model) { quoteForm | account = Just acc }, Cmd.none )
 
                 Nothing ->
                     ( { model | error = Just "Invalid recipient" }, Cmd.none )
@@ -263,12 +281,7 @@ update msg ({ quoteForm, transferForm } as model) =
                         amounts =
                             chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
                     in
-                    ( { model
-                        | quotes = LoadingItems (List.length amounts) []
-                        , transferForm = TransferForm ""
-                        , transfers = NotLoaded
-                        , fundings = NotLoaded
-                      }
+                    ( withQuotes (withQuoteForm (resetQuotes model) quoteForm) <| List.map (\_ -> Loading) amounts
                     , submitQuotes key profile curr acc amounts
                     )
 
