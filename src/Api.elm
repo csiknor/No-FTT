@@ -1,4 +1,4 @@
-module Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString, wiseApiGet, wiseApiPost, wiseApiPut)
+module Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, httpErrorToString, loadedValues, wiseApiGet, wiseApiPost, wiseApiPut)
 
 import Html exposing (Html, input)
 import Html.Attributes exposing (placeholder, type_, value)
@@ -44,6 +44,51 @@ httpErrorToString e =
 
         BadBody msg ->
             "Bad body: " ++ msg
+
+
+changeFirstLoadingToLoaded : a -> List (Status a) -> List (Status a)
+changeFirstLoadingToLoaded v list =
+    case list of
+        [] ->
+            []
+
+        Loading :: rest ->
+            Loaded v :: rest
+
+        x :: rest ->
+            x :: changeFirstLoadingToLoaded v rest
+
+
+allLoaded : List (Status a) -> Bool
+allLoaded list =
+    case list of
+        [] ->
+            False
+
+        _ ->
+            List.all
+                (\s ->
+                    case s of
+                        Loaded _ ->
+                            True
+
+                        _ ->
+                            False
+                )
+                list
+
+
+loadedValues : List (Status a) -> List a
+loadedValues =
+    List.filterMap
+        (\s ->
+            case s of
+                Loaded v ->
+                    Just v
+
+                _ ->
+                    Nothing
+        )
 
 
 

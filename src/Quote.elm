@@ -66,20 +66,14 @@ type NoticeType
 -- VIEW
 
 
-quotesView : Status (List Quote) -> Html msg
-quotesView status =
-    case status of
-        Loading ->
-            div [] [ text "Loading quotes..." ]
-
-        LoadingItems count quotes ->
-            div [] <| [ text ("Loading " ++ String.fromInt count ++ " quotes...") ] ++ (List.map Loaded >> List.map quoteView) quotes
-
-        Loaded quotes ->
-            div [] <| List.map quoteView <| List.map Loaded quotes
+quotesView : List (Status Quote) -> Html msg
+quotesView list =
+    case list of
+        [] ->
+            text ""
 
         _ ->
-            text ""
+            div [] <| List.map quoteView list
 
 
 quoteView : Status Quote -> Html msg

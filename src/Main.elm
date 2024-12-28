@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Api exposing (ApiState(..), Status(..), apiKeyView, httpErrorToString)
+import Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, httpErrorToString, loadedValues)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import Error exposing (errorView)
@@ -52,10 +52,9 @@ type alias Model =
     , profile : Status Profile
     , balances : Status (List Balance)
     , quoteForm : QuoteForm
-    , quotes : Status (List Quote)
+    , quotes : List (Status Quote)
     , recipients : Status (List Recipient)
     , transferForm : TransferForm
-    , transfer : Status Transfer
     , transfers : Status (List Transfer)
     , fundings : Status (List Funding)
     }
@@ -63,19 +62,18 @@ type alias Model =
 
 init : ( Int, List Int ) -> ( Model, Cmd Msg )
 init ( seed, seedExtension ) =
-    ( Model
-        Nothing
-        (initialSeed seed seedExtension)
-        (NotConnected Nothing)
-        NotLoaded
-        NotLoaded
-        (QuoteForm Nothing Nothing 100 100)
-        NotLoaded
-        NotLoaded
-        (TransferForm "")
-        NotLoaded
-        NotLoaded
-        NotLoaded
+    ( { error = Nothing
+      , seed = initialSeed seed seedExtension
+      , state = NotConnected Nothing
+      , profile = NotLoaded
+      , balances = NotLoaded
+      , quoteForm = QuoteForm Nothing Nothing 100 100
+      , quotes = []
+      , recipients = NotLoaded
+      , transferForm = TransferForm ""
+      , transfers = NotLoaded
+      , fundings = NotLoaded
+      }
     , Cmd.none
     )
 
@@ -100,18 +98,16 @@ withBalances model balances =
     { model | balances = balances }
 
 
-addQuote : Model -> Status Quote -> Model
-addQuote ({ quotes } as model) quote =
-    case ( quotes, quote ) of
-        ( LoadingItems count items, Loaded q ) ->
-            { model
-                | quotes =
-                    if List.length items == count - 1 then
-                        Loaded (sortedQuotes <| items ++ [ q ])
+withQuoteForm : Model -> QuoteForm -> Model
+withQuoteForm model quoteForm =
+    { model | quoteForm = quoteForm }
 
-                    else
-                        LoadingItems count (sortedQuotes <| items ++ [ q ])
-            }
+
+addQuote : Model -> Status Quote -> Model
+addQuote model quote =
+    case quote of
+        Loaded q ->
+            { model | quotes = sortedQuotes <| changeFirstLoadingToLoaded q model.quotes }
 
         _ ->
             model
@@ -134,9 +130,17 @@ addTransfer ({ transfers } as model) transfer =
             model
 
 
-sortedQuotes : List Quote -> List Quote
-sortedQuotes quotes =
-    List.sortBy (\q -> negate <| Maybe.withDefault 0 q.sourceAmount) quotes
+sortedQuotes : List (Status Quote) -> List (Status Quote)
+sortedQuotes =
+    List.sortBy
+        (\s ->
+            case s of
+                Loaded q ->
+                    negate <| Maybe.withDefault 0 q.sourceAmount
+
+                _ ->
+                    0
+        )
 
 
 withRecipients : Model -> Status (List Recipient) -> Model
@@ -278,15 +282,19 @@ update msg ({ quoteForm, transferForm } as model) =
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
 
         ( SubmitTransfer, Connected key, _ ) ->
-            case ( model.quotes, model.quoteForm.account ) of
-                ( Loaded quotes, Just acc ) ->
-                    let
-                        ( quoteIdsAndUuids, newSeed ) =
-                            generateAndPairUuids model.seed <| List.map .id quotes
-                    in
-                    ( { model | transfers = LoadingItems (List.length quoteIdsAndUuids) [], seed = newSeed }
-                    , submitTransfers key acc quoteIdsAndUuids model.transferForm.reference
-                    )
+            case model.quoteForm.account of
+                Just acc ->
+                    if allLoaded model.quotes then
+                        let
+                            ( quoteIdsAndUuids, newSeed ) =
+                                generateAndPairUuids model.seed <| List.map .id <| loadedValues model.quotes
+                        in
+                        ( { model | transfers = LoadingItems (List.length quoteIdsAndUuids) [], seed = newSeed }
+                        , submitTransfers key acc quoteIdsAndUuids model.transferForm.reference
+                        )
+
+                    else
+                        ( { model | error = Just "Invalid Quotes" }, Cmd.none )
 
                 _ ->
                     ( { model | error = Just "Invalid Quotes" }, Cmd.none )
@@ -490,12 +498,16 @@ quoteFormView model =
 
 transferFormView : Model -> Html Msg
 transferFormView model =
-    case ( model.quotes, model.transfer ) of
-        ( Loaded _, NotLoaded ) ->
-            form [ onSubmit SubmitTransfer ] <|
-                [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
-                , input [ type_ "submit", value "Transfer" ] []
-                ]
+    case model.transfers of
+        NotLoaded ->
+            if allLoaded model.quotes then
+                form [ onSubmit SubmitTransfer ] <|
+                    [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
+                    , input [ type_ "submit", value "Transfer" ] []
+                    ]
+
+            else
+                text ""
 
         _ ->
             text ""
