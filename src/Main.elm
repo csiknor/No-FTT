@@ -56,7 +56,7 @@ type alias Model =
     , quotes : List (Status Quote)
     , transferForm : TransferForm
     , transfers : List (Status Transfer)
-    , fundings : Status (List Funding)
+    , fundings : List (Status Funding)
     }
 
 
@@ -72,7 +72,7 @@ init ( seed, seedExtension ) =
       , recipients = NotLoaded
       , transferForm = TransferForm ""
       , transfers = []
-      , fundings = NotLoaded
+      , fundings = []
       }
     , Cmd.none
     )
@@ -147,17 +147,10 @@ withRecipients model recipients =
 
 
 addFunding : Model -> Status Funding -> Model
-addFunding ({ fundings } as model) funding =
-    case ( fundings, funding ) of
-        ( LoadingItems count items, Loaded f ) ->
-            { model
-                | fundings =
-                    if List.length items == count - 1 then
-                        Loaded (items ++ [ f ])
-
-                    else
-                        LoadingItems count (items ++ [ f ])
-            }
+addFunding model funding =
+    case funding of
+        Loaded f ->
+            { model | fundings = changeFirstLoadingToLoaded f model.fundings }
 
         _ ->
             model
@@ -176,7 +169,7 @@ resetQuotes model =
         , quotes = []
         , transferForm = TransferForm ""
         , transfers = []
-        , fundings = NotLoaded
+        , fundings = []
     }
 
 
@@ -319,7 +312,7 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( SubmitFunding, Connected key, Loaded profile ) ->
             if allLoaded model.transfers then
-                ( { model | fundings = LoadingItems (List.length model.transfers) [] }
+                ( { model | fundings = List.map (\_ -> Loading) model.transfers }
                 , submitFundings key profile.id <| loadedValues model.transfers
                 )
 
@@ -520,7 +513,7 @@ transferFormView model =
 fundingFormView : Model -> Html Msg
 fundingFormView model =
     case model.fundings of
-        NotLoaded ->
+        [] ->
             if allLoaded model.transfers then
                 form [ onSubmit SubmitFunding ] <|
                     [ input [ type_ "submit", value "Fund" ] []

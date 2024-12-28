@@ -81,20 +81,14 @@ transferView status =
             text ""
 
 
-fundingsView : Status (List Funding) -> Html msg
-fundingsView status =
-    case status of
-        Loading ->
-            div [] [ text "Loading fundings..." ]
-
-        LoadingItems count fundings ->
-            div [] <| [ text ("Loading " ++ String.fromInt count ++ " fundings...") ] ++ (List.map Loaded >> List.map fundingView) fundings
-
-        Loaded fundings ->
-            div [] <| List.map fundingView <| List.map Loaded fundings
+fundingsView : List (Status Funding) -> Html msg
+fundingsView list =
+    case list of
+        [] ->
+            text ""
 
         _ ->
-            text ""
+            div [] <| List.map fundingView list
 
 
 fundingView : Status Funding -> Html msg
