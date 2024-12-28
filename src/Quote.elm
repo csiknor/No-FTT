@@ -8,6 +8,7 @@ import Html.Attributes exposing (title)
 import Http
 import Json.Decode as D
 import Json.Encode as E
+import String.Interpolate exposing (interpolate)
 import Url.Builder as B
 
 
@@ -66,7 +67,7 @@ type NoticeType
 -- VIEW
 
 
-quotesView : List (Status () Quote) -> Html msg
+quotesView : List (Status QuoteReq Quote) -> Html msg
 quotesView list =
     case list of
         [] ->
@@ -76,17 +77,17 @@ quotesView list =
             div [] <| List.map quoteView list
 
 
-quoteView : Status () Quote -> Html msg
+quoteView : Status QuoteReq Quote -> Html msg
 quoteView status =
     case status of
-        Loading _ ->
-            div [] [ text "Loading quote..." ]
+        Loading r ->
+            div [] [ text <| interpolate "Loading quote {0} {1}..." [ stringFromMaybeFloatOrZero r.sourceAmount, r.sourceCurrency ] ]
 
         Loaded quote ->
             div [] <|
                 [ div [] [ text ("Quote: " ++ quote.id) ]
-                , div [] [ text ("Source: " ++ quote.sourceCurrency ++ " " ++ String.fromFloat (Maybe.withDefault 0 quote.sourceAmount)) ]
-                , div [] [ text ("Target: " ++ quote.targetCurrency ++ " " ++ String.fromFloat (Maybe.withDefault 0 quote.targetAmount)) ]
+                , div [] [ text ("Source: " ++ quote.sourceCurrency ++ " " ++ stringFromMaybeFloatOrZero quote.sourceAmount) ]
+                , div [] [ text ("Target: " ++ quote.targetCurrency ++ " " ++ stringFromMaybeFloatOrZero quote.targetAmount) ]
                 , div [] [ text ("Pay in: " ++ quote.preferredPayIn) ]
                 ]
                     ++ (paymentOptionView <| List.head <| List.filter (\p -> p.payIn == quote.preferredPayIn && p.disabled == False) quote.paymentOptions)
@@ -94,6 +95,11 @@ quoteView status =
 
         _ ->
             text ""
+
+
+stringFromMaybeFloatOrZero : Maybe Float -> String
+stringFromMaybeFloatOrZero =
+    Maybe.withDefault 0 >> String.fromFloat
 
 
 paymentOptionView : Maybe PaymentOption -> List (Html msg)

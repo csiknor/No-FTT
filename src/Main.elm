@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, httpErrorToString, loadedValues)
+import Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import Error exposing (errorView)
@@ -53,7 +53,7 @@ type alias Model =
     , balances : Status () (List Balance)
     , recipients : Status () (List Recipient)
     , quoteForm : QuoteForm
-    , quotes : List (Status () Quote)
+    , quotes : List (Status QuoteReq Quote)
     , transferForm : TransferForm
     , transfers : List (Status () Transfer)
     , fundings : List (Status () Funding)
@@ -103,17 +103,17 @@ withQuoteForm model quoteForm =
     { model | quoteForm = quoteForm }
 
 
-addQuote : Model -> Status () Quote -> Model
+addQuote : Model -> Status QuoteReq Quote -> Model
 addQuote model quote =
     case quote of
         Loaded q ->
-            { model | quotes = sortedQuotes <| changeFirstLoadingToLoaded q model.quotes }
+            { model | quotes = changeFirstMatchingLoadingToLoaded (\r -> r.sourceAmount == q.sourceAmount) q model.quotes }
 
         _ ->
             model
 
 
-withQuotes : Model -> List (Status () Quote) -> Model
+withQuotes : Model -> List (Status QuoteReq Quote) -> Model
 withQuotes model quotes =
     { model | quotes = quotes }
 
@@ -126,19 +126,6 @@ addTransfer model transfer =
 
         _ ->
             model
-
-
-sortedQuotes : List (Status () Quote) -> List (Status () Quote)
-sortedQuotes =
-    List.sortBy
-        (\s ->
-            case s of
-                Loaded q ->
-                    negate <| Maybe.withDefault 0 q.sourceAmount
-
-                _ ->
-                    0
-        )
 
 
 withRecipients : Model -> Status () (List Recipient) -> Model
@@ -264,18 +251,35 @@ update msg ({ quoteForm, transferForm } as model) =
             case ( model.quoteForm.currency, model.quoteForm.account ) of
                 ( Just curr, Just acc ) ->
                     let
-                        amounts =
-                            chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
+                        reqs =
+                            List.map
+                                (\a ->
+                                    { profileId = profile.id
+                                    , sourceCurrency = curr
+                                    , targetCurrency = curr
+                                    , sourceAmount = Just a
+                                    , targetAmount = Nothing
+                                    , preferredPayIn = Quote.Balance
+                                    , targetAccount = Just acc
+                                    }
+                                )
+                            <|
+                                chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
                     in
-                    ( withQuotes (withQuoteForm (resetQuotes model) quoteForm) <| List.map (\_ -> Loading ()) amounts
-                    , submitQuotes key profile curr acc amounts
+                    ( withQuotes (withQuoteForm (resetQuotes model) quoteForm) <| List.map Loading reqs
+                    , Cmd.batch <| List.map (\r -> postQuote key r GotQuote) reqs
                     )
 
                 _ ->
                     ( { model | error = Just "Invalid quotes: missing input" }, Cmd.none )
 
         ( GotQuote response, _, _ ) ->
-            handleResultAndStop response (addQuote model)
+            case response of
+                Ok quote ->
+                    ( ok <| addQuote model <| Loaded quote, Cmd.none )
+
+                Err e ->
+                    ( err e model, Cmd.none )
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
@@ -374,25 +378,6 @@ chunkAmountByLimit amount limit =
             else
                 []
            )
-
-
-submitQuotes : String -> Profile -> String -> Int -> List Float -> Cmd Msg
-submitQuotes key profile currency account amounts =
-    Cmd.batch <|
-        List.map
-            (\a ->
-                postQuote key
-                    { profileId = profile.id
-                    , sourceCurrency = currency
-                    , targetCurrency = currency
-                    , sourceAmount = Just a
-                    , targetAmount = Nothing
-                    , preferredPayIn = Quote.Balance
-                    , targetAccount = Just account
-                    }
-                    GotQuote
-            )
-            amounts
 
 
 generateAndPairUuids : Seed -> List a -> ( List ( a, Uuid ), Seed )

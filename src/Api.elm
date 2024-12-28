@@ -1,4 +1,4 @@
-module Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, httpErrorToString, loadedValues, wiseApiGet, wiseApiPost, wiseApiPut)
+module Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues, wiseApiGet, wiseApiPost, wiseApiPut)
 
 import Html exposing (Html, input)
 import Html.Attributes exposing (placeholder, type_, value)
@@ -56,6 +56,23 @@ changeFirstLoadingToLoaded v list =
 
         x :: rest ->
             x :: changeFirstLoadingToLoaded v rest
+
+
+changeFirstMatchingLoadingToLoaded : (a -> Bool) -> b -> List (Status a b) -> List (Status a b)
+changeFirstMatchingLoadingToLoaded matching v list =
+    case list of
+        [] ->
+            []
+
+        (Loading a) :: rest ->
+            if matching a then
+                Loaded v :: rest
+
+            else
+                Loading a :: changeFirstMatchingLoadingToLoaded matching v rest
+
+        x :: rest ->
+            x :: changeFirstMatchingLoadingToLoaded matching v rest
 
 
 allLoaded : List (Status a b) -> Bool
