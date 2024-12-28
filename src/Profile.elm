@@ -35,10 +35,10 @@ isPersonalProfile p =
 -- VIEW
 
 
-profileView : Status Profile -> Html msg
+profileView : Status () Profile -> Html msg
 profileView status =
     case status of
-        Loading ->
+        Loading _ ->
             div [] [ text "Loading profile..." ]
 
         Loaded profile ->

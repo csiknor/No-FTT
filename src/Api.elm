@@ -15,11 +15,11 @@ type ApiState
     | Connected String
 
 
-type Status a
+type Status req res
     = NotLoaded
-    | Loading
-    | Loaded a
-    | Failed
+    | Loading req
+    | Loaded res
+    | Failed req
 
 
 
@@ -45,20 +45,20 @@ httpErrorToString e =
             "Bad body: " ++ msg
 
 
-changeFirstLoadingToLoaded : a -> List (Status a) -> List (Status a)
+changeFirstLoadingToLoaded : b -> List (Status a b) -> List (Status a b)
 changeFirstLoadingToLoaded v list =
     case list of
         [] ->
             []
 
-        Loading :: rest ->
+        (Loading _) :: rest ->
             Loaded v :: rest
 
         x :: rest ->
             x :: changeFirstLoadingToLoaded v rest
 
 
-allLoaded : List (Status a) -> Bool
+allLoaded : List (Status a b) -> Bool
 allLoaded list =
     case list of
         [] ->
@@ -77,7 +77,7 @@ allLoaded list =
                 list
 
 
-loadedValues : List (Status a) -> List a
+loadedValues : List (Status a b) -> List b
 loadedValues =
     List.filterMap
         (\s ->

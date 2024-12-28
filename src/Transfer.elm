@@ -48,7 +48,7 @@ type FundingStatus
 -- VIEW
 
 
-transfersView : List (Status Transfer) -> Html msg
+transfersView : List (Status () Transfer) -> Html msg
 transfersView list =
     case list of
         [] ->
@@ -58,10 +58,10 @@ transfersView list =
             div [] <| List.map transferView list
 
 
-transferView : Status Transfer -> Html msg
+transferView : Status () Transfer -> Html msg
 transferView status =
     case status of
-        Loading ->
+        Loading _ ->
             div [] [ text "Loading transfer..." ]
 
         Loaded transfer ->
@@ -81,7 +81,7 @@ transferView status =
             text ""
 
 
-fundingsView : List (Status Funding) -> Html msg
+fundingsView : List (Status () Funding) -> Html msg
 fundingsView list =
     case list of
         [] ->
@@ -91,10 +91,10 @@ fundingsView list =
             div [] <| List.map fundingView list
 
 
-fundingView : Status Funding -> Html msg
+fundingView : Status () Funding -> Html msg
 fundingView fundingStatus =
     case fundingStatus of
-        Loading ->
+        Loading _ ->
             div [] [ text "Loading funding..." ]
 
         Loaded funding ->

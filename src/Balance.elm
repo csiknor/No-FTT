@@ -26,10 +26,10 @@ type alias Balance =
 -- VIEW
 
 
-balancesView : Maybe String -> Status (List Balance) -> (String -> msg) -> Html msg
+balancesView : Maybe String -> Status () (List Balance) -> (String -> msg) -> Html msg
 balancesView curr status msg =
     case status of
-        Loading ->
+        Loading _ ->
             div [] [ text "Loading balances..." ]
 
         Loaded balances ->

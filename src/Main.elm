@@ -49,14 +49,14 @@ type alias Model =
     { error : Maybe String
     , seed : Seed
     , state : ApiState
-    , profile : Status Profile
-    , balances : Status (List Balance)
-    , recipients : Status (List Recipient)
+    , profile : Status () Profile
+    , balances : Status () (List Balance)
+    , recipients : Status () (List Recipient)
     , quoteForm : QuoteForm
-    , quotes : List (Status Quote)
+    , quotes : List (Status () Quote)
     , transferForm : TransferForm
-    , transfers : List (Status Transfer)
-    , fundings : List (Status Funding)
+    , transfers : List (Status () Transfer)
+    , fundings : List (Status () Funding)
     }
 
 
@@ -88,12 +88,12 @@ err error model =
     { model | error = Just (httpErrorToString error) }
 
 
-withProfile : Model -> Status Profile -> Model
+withProfile : Model -> Status () Profile -> Model
 withProfile model profile =
     { model | profile = profile }
 
 
-withBalances : Model -> Status (List Balance) -> Model
+withBalances : Model -> Status () (List Balance) -> Model
 withBalances model balances =
     { model | balances = balances }
 
@@ -103,7 +103,7 @@ withQuoteForm model quoteForm =
     { model | quoteForm = quoteForm }
 
 
-addQuote : Model -> Status Quote -> Model
+addQuote : Model -> Status () Quote -> Model
 addQuote model quote =
     case quote of
         Loaded q ->
@@ -113,12 +113,12 @@ addQuote model quote =
             model
 
 
-withQuotes : Model -> List (Status Quote) -> Model
+withQuotes : Model -> List (Status () Quote) -> Model
 withQuotes model quotes =
     { model | quotes = quotes }
 
 
-addTransfer : Model -> Status Transfer -> Model
+addTransfer : Model -> Status () Transfer -> Model
 addTransfer model transfer =
     case transfer of
         Loaded t ->
@@ -128,7 +128,7 @@ addTransfer model transfer =
             model
 
 
-sortedQuotes : List (Status Quote) -> List (Status Quote)
+sortedQuotes : List (Status () Quote) -> List (Status () Quote)
 sortedQuotes =
     List.sortBy
         (\s ->
@@ -141,12 +141,12 @@ sortedQuotes =
         )
 
 
-withRecipients : Model -> Status (List Recipient) -> Model
+withRecipients : Model -> Status () (List Recipient) -> Model
 withRecipients model recipients =
     { model | recipients = recipients }
 
 
-addFunding : Model -> Status Funding -> Model
+addFunding : Model -> Status () Funding -> Model
 addFunding model funding =
     case funding of
         Loaded f ->
@@ -202,7 +202,7 @@ update msg ({ quoteForm, transferForm } as model) =
     case ( msg, model.state, model.profile ) of
         ( ChangeApiKey key, _, _ ) ->
             if Uuid.isValidUuid key then
-                ( resetQuotes { model | state = Connected key, profile = Loading, balances = NotLoaded }
+                ( resetQuotes { model | state = Connected key, profile = Loading (), balances = NotLoaded }
                 , getPersonalProfile key GotProfiles
                 )
 
@@ -267,7 +267,7 @@ update msg ({ quoteForm, transferForm } as model) =
                         amounts =
                             chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
                     in
-                    ( withQuotes (withQuoteForm (resetQuotes model) quoteForm) <| List.map (\_ -> Loading) amounts
+                    ( withQuotes (withQuoteForm (resetQuotes model) quoteForm) <| List.map (\_ -> Loading ()) amounts
                     , submitQuotes key profile curr acc amounts
                     )
 
@@ -288,7 +288,7 @@ update msg ({ quoteForm, transferForm } as model) =
                             ( quoteIdsAndUuids, newSeed ) =
                                 generateAndPairUuids model.seed <| List.map .id <| loadedValues model.quotes
                         in
-                        ( { model | transfers = List.map (\_ -> Loading) quoteIdsAndUuids, seed = newSeed }
+                        ( { model | transfers = List.map (\_ -> Loading ()) quoteIdsAndUuids, seed = newSeed }
                         , submitTransfers key acc quoteIdsAndUuids model.transferForm.reference
                         )
 
@@ -303,7 +303,7 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( CancelTransfer, Connected key, _ ) ->
             if allLoaded model.transfers then
-                ( { model | transfers = List.map (\_ -> Loading) model.transfers }
+                ( { model | transfers = List.map (\_ -> Loading ()) model.transfers }
                 , cancelTransfers key <| loadedValues model.transfers
                 )
 
@@ -312,7 +312,7 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( SubmitFunding, Connected key, Loaded profile ) ->
             if allLoaded model.transfers then
-                ( { model | fundings = List.map (\_ -> Loading) model.transfers }
+                ( { model | fundings = List.map (\_ -> Loading ()) model.transfers }
                 , submitFundings key profile.id <| loadedValues model.transfers
                 )
 
@@ -326,7 +326,7 @@ update msg ({ quoteForm, transferForm } as model) =
             ( { model | error = Just "Invalid operation" }, Cmd.none )
 
 
-handleResultAndExecute : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Result String b -> Cmd Msg) -> ( Model, Cmd Msg )
+handleResultAndExecute : Result Http.Error a -> (a -> Result String b) -> (Status () b -> Model) -> (Result String b -> Cmd Msg) -> ( Model, Cmd Msg )
 handleResultAndExecute response mod with cmd =
     case response of
         Ok value ->
@@ -338,17 +338,17 @@ handleResultAndExecute response mod with cmd =
                     ( withError (with NotLoaded) e, cmd (Err e) )
 
         Err e ->
-            ( err e <| with Failed, Cmd.none )
+            ( err e <| with <| Failed (), Cmd.none )
 
 
-handleResultAndStop : Result Http.Error a -> (Status a -> Model) -> ( Model, Cmd Msg )
+handleResultAndStop : Result Http.Error a -> (Status () a -> Model) -> ( Model, Cmd Msg )
 handleResultAndStop response with =
     handleResultAndExecute response Ok with (\_ -> Cmd.none)
 
 
-handleResultAndLoad : Result Http.Error a -> (a -> Result String b) -> (Status b -> Model) -> (Model -> Status x -> Model) -> (b -> Cmd Msg) -> ( Model, Cmd Msg )
+handleResultAndLoad : Result Http.Error a -> (a -> Result String b) -> (Status () b -> Model) -> (Model -> Status () x -> Model) -> (b -> Cmd Msg) -> ( Model, Cmd Msg )
 handleResultAndLoad response mod with with2 cmd =
-    handleResultAndExecute response mod (with >> (\model -> with2 model Loading)) <|
+    handleResultAndExecute response mod (with >> (\model -> with2 model <| Loading ())) <|
         Result.map cmd
             >> Result.withDefault Cmd.none
 

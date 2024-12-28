@@ -27,10 +27,10 @@ type alias Recipient =
 -- VIEW
 
 
-recipientsView : Maybe Int -> Status (List Recipient) -> (String -> msg) -> Html msg
+recipientsView : Maybe Int -> Status () (List Recipient) -> (String -> msg) -> Html msg
 recipientsView acc status msg =
     case status of
-        Loading ->
+        Loading _ ->
             div [] [ text "Loading recipients..." ]
 
         Loaded recipients ->

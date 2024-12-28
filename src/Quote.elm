@@ -66,7 +66,7 @@ type NoticeType
 -- VIEW
 
 
-quotesView : List (Status Quote) -> Html msg
+quotesView : List (Status () Quote) -> Html msg
 quotesView list =
     case list of
         [] ->
@@ -76,10 +76,10 @@ quotesView list =
             div [] <| List.map quoteView list
 
 
-quoteView : Status Quote -> Html msg
+quoteView : Status () Quote -> Html msg
 quoteView status =
     case status of
-        Loading ->
+        Loading _ ->
             div [] [ text "Loading quote..." ]
 
         Loaded quote ->
