@@ -48,20 +48,14 @@ type FundingStatus
 -- VIEW
 
 
-transfersView : Status (List Transfer) -> Html msg
-transfersView status =
-    case status of
-        Loading ->
-            div [] [ text "Loading transfers..." ]
-
-        LoadingItems count transfers ->
-            div [] <| [ text ("Loading " ++ String.fromInt count ++ " transfers...") ] ++ (List.map Loaded >> List.map transferView) transfers
-
-        Loaded transfers ->
-            div [] <| List.map transferView <| List.map Loaded transfers
+transfersView : List (Status Transfer) -> Html msg
+transfersView list =
+    case list of
+        [] ->
+            text ""
 
         _ ->
-            text ""
+            div [] <| List.map transferView list
 
 
 transferView : Status Transfer -> Html msg

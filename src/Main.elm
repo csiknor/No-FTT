@@ -55,7 +55,7 @@ type alias Model =
     , quoteForm : QuoteForm
     , quotes : List (Status Quote)
     , transferForm : TransferForm
-    , transfers : Status (List Transfer)
+    , transfers : List (Status Transfer)
     , fundings : Status (List Funding)
     }
 
@@ -71,7 +71,7 @@ init ( seed, seedExtension ) =
       , quotes = []
       , recipients = NotLoaded
       , transferForm = TransferForm ""
-      , transfers = NotLoaded
+      , transfers = []
       , fundings = NotLoaded
       }
     , Cmd.none
@@ -119,17 +119,10 @@ withQuotes model quotes =
 
 
 addTransfer : Model -> Status Transfer -> Model
-addTransfer ({ transfers } as model) transfer =
-    case ( transfers, transfer ) of
-        ( LoadingItems count items, Loaded t ) ->
-            { model
-                | transfers =
-                    if List.length items == count - 1 then
-                        Loaded (items ++ [ t ])
-
-                    else
-                        LoadingItems count (items ++ [ t ])
-            }
+addTransfer model transfer =
+    case transfer of
+        Loaded t ->
+            { model | transfers = changeFirstLoadingToLoaded t model.transfers }
 
         _ ->
             model
@@ -182,7 +175,7 @@ resetQuotes model =
         , quoteForm = QuoteForm Nothing Nothing 100 100
         , quotes = []
         , transferForm = TransferForm ""
-        , transfers = NotLoaded
+        , transfers = []
         , fundings = NotLoaded
     }
 
@@ -302,7 +295,7 @@ update msg ({ quoteForm, transferForm } as model) =
                             ( quoteIdsAndUuids, newSeed ) =
                                 generateAndPairUuids model.seed <| List.map .id <| loadedValues model.quotes
                         in
-                        ( { model | transfers = LoadingItems (List.length quoteIdsAndUuids) [], seed = newSeed }
+                        ( { model | transfers = List.map (\_ -> Loading) quoteIdsAndUuids, seed = newSeed }
                         , submitTransfers key acc quoteIdsAndUuids model.transferForm.reference
                         )
 
@@ -316,24 +309,22 @@ update msg ({ quoteForm, transferForm } as model) =
             handleResultAndStop response <| addTransfer model
 
         ( CancelTransfer, Connected key, _ ) ->
-            case model.transfers of
-                Loaded transfers ->
-                    ( { model | transfers = LoadingItems (List.length transfers) [] }
-                    , cancelTransfers key transfers
-                    )
+            if allLoaded model.transfers then
+                ( { model | transfers = List.map (\_ -> Loading) model.transfers }
+                , cancelTransfers key <| loadedValues model.transfers
+                )
 
-                _ ->
-                    ( { model | error = Just "Invalid Transfers" }, Cmd.none )
+            else
+                ( { model | error = Just "Invalid Transfers" }, Cmd.none )
 
         ( SubmitFunding, Connected key, Loaded profile ) ->
-            case model.transfers of
-                Loaded transfers ->
-                    ( { model | fundings = LoadingItems (List.length transfers) [] }
-                    , submitFundings key profile.id transfers
-                    )
+            if allLoaded model.transfers then
+                ( { model | fundings = LoadingItems (List.length model.transfers) [] }
+                , submitFundings key profile.id <| loadedValues model.transfers
+                )
 
-                _ ->
-                    ( { model | error = Just "Invalid Transfer" }, Cmd.none )
+            else
+                ( { model | error = Just "Invalid Transfer" }, Cmd.none )
 
         ( GotFunding response, _, _ ) ->
             handleResultAndStop response <| addFunding model
@@ -512,7 +503,7 @@ quoteFormView model =
 transferFormView : Model -> Html Msg
 transferFormView model =
     case model.transfers of
-        NotLoaded ->
+        [] ->
             if allLoaded model.quotes then
                 form [ onSubmit SubmitTransfer ] <|
                     [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
@@ -528,12 +519,16 @@ transferFormView model =
 
 fundingFormView : Model -> Html Msg
 fundingFormView model =
-    case ( model.transfers, model.fundings ) of
-        ( Loaded _, NotLoaded ) ->
-            form [ onSubmit SubmitFunding ] <|
-                [ input [ type_ "submit", value "Fund" ] []
-                , button [ type_ "button", onClick CancelTransfer ] [ text "Cancel" ]
-                ]
+    case model.fundings of
+        NotLoaded ->
+            if allLoaded model.transfers then
+                form [ onSubmit SubmitFunding ] <|
+                    [ input [ type_ "submit", value "Fund" ] []
+                    , button [ type_ "button", onClick CancelTransfer ] [ text "Cancel" ]
+                    ]
+
+            else
+                text ""
 
         _ ->
             text ""
