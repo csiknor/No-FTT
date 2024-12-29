@@ -178,6 +178,7 @@ type Msg
     | ChangeAmount String
     | ChangeLimit String
     | SubmitQuote
+    | ResubmitFailedQuote
     | GotQuote (Result ( Http.Error, QuoteReq ) Quote)
     | ChangeReference String
     | SubmitTransfer
@@ -275,6 +276,23 @@ update msg ({ quoteForm, transferForm } as model) =
 
                 _ ->
                     ( { model | error = Just "Invalid quotes: missing input" }, Cmd.none )
+
+        ( ResubmitFailedQuote, Connected key, _ ) ->
+            Tuple.mapBoth
+                (\quotes -> withQuotes model quotes)
+                (\cmds -> Cmd.batch cmds)
+            <|
+                List.unzip <|
+                    List.map
+                        (\q ->
+                            case q of
+                                Failed req ->
+                                    ( Loading req, postQuote key req GotQuote )
+
+                                _ ->
+                                    ( q, Cmd.none )
+                        )
+                        model.quotes
 
         ( GotQuote response, _, _ ) ->
             case response of
@@ -475,6 +493,23 @@ quoteFormView model =
 
                             _ ->
                                 []
+                       )
+                    ++ (if
+                            List.any
+                                (\s ->
+                                    case s of
+                                        Failed _ ->
+                                            True
+
+                                        _ ->
+                                            False
+                                )
+                                model.quotes
+                        then
+                            [ button [ type_ "button", onClick ResubmitFailedQuote ] [ text "Retry failed" ] ]
+
+                        else
+                            []
                        )
 
         _ ->

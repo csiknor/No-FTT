@@ -199,7 +199,7 @@ wiseApiRequest req =
         , url = wiseUrl ++ req.path
         , body = req.body
         , expect = req.expect
-        , timeout = Nothing
+        , timeout = Just 5000
         , tracker = Nothing
         }
 
