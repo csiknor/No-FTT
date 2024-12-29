@@ -3,7 +3,7 @@ module Main exposing (main)
 import Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
-import Error exposing (errorView)
+import Error exposing (errorsView)
 import Html exposing (Html, button, div, form, input, text)
 import Html.Attributes as A exposing (placeholder, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
@@ -46,7 +46,7 @@ type alias TransferForm =
 
 
 type alias Model =
-    { error : Maybe String
+    { errors : List String
     , seed : Seed
     , state : ApiState
     , profile : Status () Profile
@@ -62,7 +62,7 @@ type alias Model =
 
 init : ( Int, List Int ) -> ( Model, Cmd Msg )
 init ( seed, seedExtension ) =
-    ( { error = Nothing
+    ( { errors = []
       , seed = initialSeed seed seedExtension
       , state = NotConnected Nothing
       , profile = NotLoaded
@@ -78,14 +78,9 @@ init ( seed, seedExtension ) =
     )
 
 
-ok : Model -> Model
-ok model =
-    { model | error = Nothing }
-
-
-err : Error -> Model -> Model
-err error model =
-    { model | error = Just (httpErrorToString error) }
+addError : Error -> Model -> Model
+addError error ({ errors } as model) =
+    { model | errors = httpErrorToString error :: errors }
 
 
 withProfile : Model -> Status () Profile -> Model
@@ -147,15 +142,14 @@ addFunding model funding =
 
 
 withError : Model -> String -> Model
-withError model error =
-    { model | error = Just error }
+withError ({ errors } as model) error =
+    { model | errors = error :: errors }
 
 
 resetQuotes : Model -> Model
 resetQuotes model =
     { model
-        | error = Nothing
-        , quoteForm = QuoteForm Nothing Nothing 100 100
+        | quoteForm = QuoteForm Nothing Nothing 100 100
         , quotes = []
         , transferForm = TransferForm ""
         , transfers = []
@@ -169,6 +163,7 @@ resetQuotes model =
 
 type Msg
     = ChangeApiKey String
+    | ClearErrors
     | GotProfiles (Result Http.Error (List Profile))
     | GotBalances (Result Http.Error (List Balance))
     | GotRate (Result Http.Error Rate)
@@ -207,6 +202,9 @@ update msg ({ quoteForm, transferForm } as model) =
                 , Cmd.none
                 )
 
+        ( ClearErrors, _, _ ) ->
+            ( { model | errors = [] }, Cmd.none )
+
         ( GotProfiles response, Connected key, _ ) ->
             handleResultAndLoad
                 response
@@ -224,7 +222,7 @@ update msg ({ quoteForm, transferForm } as model) =
                     ( { model | quoteForm = { quoteForm | limit = rateAdjustedLimit rate.rate } }, Cmd.none )
 
                 Err e ->
-                    ( err e model, Cmd.none )
+                    ( addError e model, Cmd.none )
 
         ( GotRecipients response, _, _ ) ->
             handleResultAndStop response (withRecipients model)
@@ -249,7 +247,7 @@ update msg ({ quoteForm, transferForm } as model) =
                     ( withQuoteForm (resetQuotes model) { quoteForm | account = Just acc }, Cmd.none )
 
                 Nothing ->
-                    ( { model | error = Just "Invalid recipient" }, Cmd.none )
+                    ( withError model "Invalid recipient", Cmd.none )
 
         ( SubmitQuote, Connected key, Loaded profile ) ->
             case ( model.quoteForm.currency, model.quoteForm.account ) of
@@ -275,7 +273,7 @@ update msg ({ quoteForm, transferForm } as model) =
                     )
 
                 _ ->
-                    ( { model | error = Just "Invalid quotes: missing input" }, Cmd.none )
+                    ( withError model "Invalid quotes: missing input", Cmd.none )
 
         ( ResubmitFailedQuote, Connected key, _ ) ->
             Tuple.mapBoth
@@ -297,10 +295,10 @@ update msg ({ quoteForm, transferForm } as model) =
         ( GotQuote response, _, _ ) ->
             case response of
                 Ok quote ->
-                    ( ok <| addQuote model <| Loaded quote, Cmd.none )
+                    ( addQuote model <| Loaded quote, Cmd.none )
 
                 Err ( e, req ) ->
-                    ( err e <| addQuote model <| Failed req, Cmd.none )
+                    ( addError e <| addQuote model <| Failed req, Cmd.none )
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
@@ -318,10 +316,10 @@ update msg ({ quoteForm, transferForm } as model) =
                         )
 
                     else
-                        ( { model | error = Just "Invalid Quotes" }, Cmd.none )
+                        ( withError model "Invalid Quotes", Cmd.none )
 
                 _ ->
-                    ( { model | error = Just "Invalid Quotes" }, Cmd.none )
+                    ( withError model "Invalid Quotes", Cmd.none )
 
         ( GotTransfer response, _, _ ) ->
             handleResultAndStop response <| addTransfer model
@@ -333,7 +331,7 @@ update msg ({ quoteForm, transferForm } as model) =
                 )
 
             else
-                ( { model | error = Just "Invalid Transfers" }, Cmd.none )
+                ( withError model "Invalid Transfers", Cmd.none )
 
         ( SubmitFunding, Connected key, Loaded profile ) ->
             if allLoaded model.transfers then
@@ -342,13 +340,13 @@ update msg ({ quoteForm, transferForm } as model) =
                 )
 
             else
-                ( { model | error = Just "Invalid Transfer" }, Cmd.none )
+                ( withError model "Invalid Transfer", Cmd.none )
 
         ( GotFunding response, _, _ ) ->
             handleResultAndStop response <| addFunding model
 
         _ ->
-            ( { model | error = Just "Invalid operation" }, Cmd.none )
+            ( withError model "Invalid operation", Cmd.none )
 
 
 handleResultAndExecute : Result Http.Error a -> (a -> Result String b) -> (Status () b -> Model) -> (Result String b -> Cmd Msg) -> ( Model, Cmd Msg )
@@ -357,13 +355,13 @@ handleResultAndExecute response mod with cmd =
         Ok value ->
             case mod value of
                 Ok v ->
-                    ( ok <| with <| Loaded v, cmd (Ok v) )
+                    ( with <| Loaded v, cmd (Ok v) )
 
                 Err e ->
                     ( withError (with NotLoaded) e, cmd (Err e) )
 
         Err e ->
-            ( err e <| with <| Failed (), Cmd.none )
+            ( addError e <| with <| Failed (), Cmd.none )
 
 
 handleResultAndStop : Result Http.Error a -> (Status () a -> Model) -> ( Model, Cmd Msg )
@@ -464,7 +462,7 @@ subscriptions _ =
 view : Model -> Html Msg
 view model =
     div []
-        [ errorView model.error
+        [ errorsView model.errors ClearErrors
         , apiKeyView model.state ChangeApiKey
         , profileView model.profile
         , quoteFormView model

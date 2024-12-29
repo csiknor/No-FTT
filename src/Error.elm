@@ -1,17 +1,25 @@
-module Error exposing (errorView)
+module Error exposing (errorsView)
 
-import Html exposing (Html, div, text)
+import Html exposing (Html, button, div, text)
+import Html.Events exposing (onClick)
 
 
 
 -- VIEW
 
 
-errorView : Maybe String -> Html msg
-errorView error =
-    case error of
-        Just msg ->
-            div [] [ text ("Error occurred: " ++ msg) ]
-
-        Nothing ->
+errorsView : List String -> msg -> Html msg
+errorsView errors msg =
+    case errors of
+        [] ->
             text ""
+
+        _ ->
+            div [] <|
+                List.map errorView errors
+                    ++ [ div [] [ button [ onClick msg ] [ text "Clear errors" ] ] ]
+
+
+errorView : String -> Html msg
+errorView error =
+    div [] [ text <| "Error: " ++ error ]
