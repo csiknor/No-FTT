@@ -6,7 +6,7 @@ const app = express();
 
 app.use(cors());
 
-const failRatio = 0.2; // 20% failure rate
+const failRatio = 0.0;
 const errors = [401, 403, 500, 'timeout'];
 
 app.use(

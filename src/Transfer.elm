@@ -1,7 +1,8 @@
-module Transfer exposing (AnyTransferReq(..), Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, postFunding, postTransfer, putTransferCancel, transfersView)
+module Transfer exposing (AnyTransferReq(..), Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
 
-import Api exposing (Status(..), wiseApiPost, wiseApiPut, wrapError)
-import Html exposing (Html, div, text)
+import Api exposing (Status(..), wiseApiGet, wiseApiPost, wiseApiPut, wrapError)
+import Html exposing (Html, button, div, text)
+import Html.Events exposing (onClick)
 import Http
 import Json.Decode as D
 import Json.Encode as E
@@ -71,23 +72,66 @@ transferView status =
             div [] [ text "Loading transfer..." ]
 
         Loaded transfer ->
-            div []
-                [ div [] [ text <| "Transfer: " ++ String.fromInt transfer.id ++ " (" ++ transfer.status ++ ")" ]
-                , div []
-                    [ case transfer.hasActiveIssues of
-                        True ->
-                            text "Transfer has active issues"
-
-                        False ->
-                            text ""
-                    ]
-                ]
+            loadedTransferView transfer
 
         Failed (CreateTransferReq req) ->
             div [] [ text <| "Failed to create transfer for quote " ++ req.quoteUuid ]
 
         Failed (CancelTransferReq transferId) ->
             div [] [ text <| "Failed to cancel transfer " ++ String.fromInt transferId ]
+
+        _ ->
+            text ""
+
+
+loadedTransferView : Transfer -> Html msg
+loadedTransferView transfer =
+    div []
+        [ div [] [ text <| "Transfer: " ++ String.fromInt transfer.id ++ " (" ++ transfer.status ++ ")" ]
+        , div []
+            [ case transfer.hasActiveIssues of
+                True ->
+                    text "Transfer has active issues"
+
+                False ->
+                    text ""
+            ]
+        ]
+
+
+pendingTransfersView : Status () (List (Status Int Transfer)) -> msg -> Html msg
+pendingTransfersView pending msg =
+    case pending of
+        Loading _ ->
+            div [] [ text "Loading pending transfers..." ]
+
+        Loaded [] ->
+            text "No pending transfers"
+
+        Loaded transfers ->
+            div [] <|
+                [ text <| "Pending transfers: " ++ String.fromInt (List.length transfers) ]
+                    ++ List.map pendingTransferView transfers
+                    ++ [ button [ onClick msg ] [ text "Cancel Pending" ] ]
+
+        Failed _ ->
+            text "Failed to load pending transfers"
+
+        _ ->
+            text ""
+
+
+pendingTransferView : Status Int Transfer -> Html msg
+pendingTransferView status =
+    case status of
+        Loading _ ->
+            div [] [ text "Cancelling pending transfer..." ]
+
+        Loaded transfer ->
+            loadedTransferView transfer
+
+        Failed _ ->
+            text "Failed to cancel pending transfer"
 
         _ ->
             text ""
@@ -149,6 +193,20 @@ fundingErrorCodeView code =
 transfersUrl : String
 transfersUrl =
     "/v1/transfers"
+
+
+pendingTransfersApi : String
+pendingTransfersApi =
+    B.absolute [ "v1", "transfers" ] [ B.string "status" "incoming_payment_waiting", B.int "limit" 100 ]
+
+
+getPendingTransfers : String -> (Result Http.Error (List Transfer) -> msg) -> Cmd msg
+getPendingTransfers token msg =
+    wiseApiGet
+        { path = pendingTransfersApi
+        , expect = Http.expectJson msg (D.list transferDecoder)
+        , token = token
+        }
 
 
 postTransfer : String -> TransferReq -> (Result ( Http.Error, AnyTransferReq ) Transfer -> msg) -> Cmd msg

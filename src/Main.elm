@@ -16,7 +16,7 @@ import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import String.Interpolate exposing (interpolate)
-import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, postFunding, postTransfer, putTransferCancel, transfersView)
+import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
 
 
 
@@ -57,6 +57,7 @@ type alias Model =
     , transferForm : TransferForm
     , transfers : List (Status AnyTransferReq Transfer)
     , fundings : List (Status Int Funding)
+    , pending : Status () (List (Status Int Transfer))
     }
 
 
@@ -73,6 +74,7 @@ init ( seed, seedExtension ) =
       , transferForm = TransferForm ""
       , transfers = []
       , fundings = []
+      , pending = NotLoaded
       }
     , Cmd.none
     )
@@ -176,6 +178,38 @@ resetQuotes model =
     }
 
 
+withPending : Model -> Status () (List Transfer) -> Model
+withPending model pending =
+    { model
+        | pending =
+            case pending of
+                Loaded transfers ->
+                    Loaded <| List.map Loaded transfers
+
+                Failed _ ->
+                    Failed ()
+
+                Loading _ ->
+                    Loading ()
+
+                NotLoaded ->
+                    NotLoaded
+    }
+
+
+addPending : Model -> Status AnyTransferReq Transfer -> Model
+addPending model transfer =
+    case ( model.pending, transfer ) of
+        ( Loaded transfers, Loaded t ) ->
+            { model | pending = Loaded <| changeFirstMatchingLoadingToLoaded ((==) t.id) t transfers }
+
+        ( Loaded transfers, Failed (CancelTransferReq transferId) ) ->
+            { model | pending = Loaded <| changeFirstMatchingLoadingToFailed ((==) transferId) transfers }
+
+        _ ->
+            { model | errors = "Invalid Pending" :: model.errors }
+
+
 
 -- UPDATE
 
@@ -202,6 +236,9 @@ type Msg
     | SubmitFunding
     | ResubmitFailedFunding
     | GotFunding (Result ( Http.Error, Int ) Funding)
+    | GotPending (Result Http.Error (List Transfer))
+    | CancelPending
+    | GotPendingCancel (Result ( Http.Error, AnyTransferReq ) Transfer)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -210,7 +247,10 @@ update msg ({ quoteForm, transferForm } as model) =
         ( ChangeApiKey key, _, _ ) ->
             if Uuid.isValidUuid key then
                 ( resetQuotes { model | state = Connected key, profile = Loading (), balances = NotLoaded }
-                , getPersonalProfile key GotProfiles
+                , Cmd.batch
+                    [ getPersonalProfile key GotProfiles
+                    , getPendingTransfers key GotPending
+                    ]
                 )
 
             else
@@ -234,6 +274,27 @@ update msg ({ quoteForm, transferForm } as model) =
                 (withProfile model)
                 withBalances
                 (getBalances key GotBalances)
+
+        ( GotPending response, _, _ ) ->
+            handleResultAndStop "Pending" response (withPending model)
+
+        ( CancelPending, Connected key, _ ) ->
+            case model.pending of
+                Loaded transfers ->
+                    ( { model | pending = Loaded <| List.map (.id >> Loading) <| loadedValues transfers }
+                    , Cmd.batch <| List.map (\t -> putTransferCancel key t.id GotPendingCancel) <| loadedValues transfers
+                    )
+
+                _ ->
+                    ( withError model "Invalid Pending", Cmd.none )
+
+        ( GotPendingCancel response, _, _ ) ->
+            case response of
+                Ok transfer ->
+                    ( addPending model <| Loaded transfer, Cmd.none )
+
+                Err ( e, req ) ->
+                    ( addError "Pending" e <| addPending model <| Failed req, Cmd.none )
 
         ( GotBalances response, _, _ ) ->
             handleResultAndStop "Balances" response (withBalances model)
@@ -529,6 +590,7 @@ view model =
         [ errorsView model.errors ClearErrors
         , apiKeyView model.state ChangeApiKey
         , profileView model.profile
+        , pendingTransfersView model.pending CancelPending
         , quoteFormView model
         , quotesView model.quotes
         , transferFormView model
