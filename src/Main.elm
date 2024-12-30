@@ -563,7 +563,7 @@ fundingFormView : Model -> Html Msg
 fundingFormView model =
     case model.fundings of
         [] ->
-            if allLoaded model.transfers then
+            if allLoaded model.transfers && List.all (\t -> t.status == "incoming_payment_waiting") (loadedValues model.transfers) then
                 form [ onSubmit SubmitFunding ] <|
                     [ input [ type_ "submit", value "Fund" ] []
                     , button [ type_ "button", onClick CancelTransfer ] [ text "Cancel" ]
