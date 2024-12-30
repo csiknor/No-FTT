@@ -4,8 +4,6 @@ module Api exposing
     , allLoaded
     , anyFailed
     , apiKeyView
-    , changeFirstLoadingToLoaded
-    , changeFirstMatchingLoading
     , changeFirstMatchingLoadingToFailed
     , changeFirstMatchingLoadingToLoaded
     , httpErrorToString
@@ -59,11 +57,6 @@ httpErrorToString e =
 
         BadBody msg ->
             "Bad body: " ++ msg
-
-
-changeFirstLoadingToLoaded : b -> List (Status a b) -> List (Status a b)
-changeFirstLoadingToLoaded v list =
-    changeFirstMatchingLoadingToLoaded (\_ -> True) v list
 
 
 changeFirstMatchingLoadingToLoaded : (a -> Bool) -> b -> List (Status a b) -> List (Status a b)

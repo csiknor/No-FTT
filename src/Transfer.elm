@@ -38,7 +38,8 @@ type alias Transfer =
 
 
 type alias Funding =
-    { type_ : String
+    { transferId : Int
+    , type_ : String
     , status : FundingStatus
     , errorCode : Maybe String
     }
@@ -92,7 +93,7 @@ transferView status =
             text ""
 
 
-fundingsView : List (Status () Funding) -> Html msg
+fundingsView : List (Status Int Funding) -> Html msg
 fundingsView list =
     case list of
         [] ->
@@ -102,7 +103,7 @@ fundingsView list =
             div [] <| List.map fundingView list
 
 
-fundingView : Status () Funding -> Html msg
+fundingView : Status Int Funding -> Html msg
 fundingView fundingStatus =
     case fundingStatus of
         Loading _ ->
@@ -113,6 +114,9 @@ fundingView fundingStatus =
                 [ div [] [ text <| "Funding: " ++ funding.type_ ++ " (" ++ fundingStatusView funding.status ++ ")" ]
                 , fundingErrorCodeView funding.errorCode
                 ]
+
+        Failed transferId ->
+            div [] [ text <| "Failed to fund transfer " ++ String.fromInt transferId ]
 
         _ ->
             text ""
@@ -200,19 +204,20 @@ fundingUrl profileId transferId =
     B.absolute [ "v3", "profiles", String.fromInt profileId, "transfers", String.fromInt transferId, "payments" ] []
 
 
-postFunding : String -> Int -> Int -> (Result Http.Error Funding -> msg) -> Cmd msg
+postFunding : String -> Int -> Int -> (Result ( Http.Error, Int ) Funding -> msg) -> Cmd msg
 postFunding token profileId transferId msg =
     wiseApiPost
         { path = fundingUrl profileId transferId
         , body = Http.jsonBody (E.object [ ( "type", E.string "BALANCE" ) ])
-        , expect = Http.expectJson msg fundingDecoder
+        , expect = Http.expectJson (wrapError transferId msg) (fundingDecoder transferId)
         , token = token
         }
 
 
-fundingDecoder : D.Decoder Funding
-fundingDecoder =
-    D.map3 Funding
+fundingDecoder : Int -> D.Decoder Funding
+fundingDecoder transferId =
+    D.map4 Funding
+        (D.succeed transferId)
         (D.field "type" D.string)
         (D.field "status" fundingStatusDecoder)
         (D.maybe (D.field "errorCode" D.string))

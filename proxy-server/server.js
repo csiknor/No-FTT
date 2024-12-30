@@ -9,7 +9,14 @@ app.use(cors());
 const failRatio = 0.2; // 20% failure rate
 const errors = [401, 403, 500, 'timeout'];
 
-app.use(['/api/v3/profiles/:profileId/quotes', '/api/v1/transfers', '/api/v1/transfers/:transferId/cancel'], (req, res, next) => {
+app.use(
+    [
+      '/api/v3/profiles/:profileId/quotes',
+      '/api/v1/transfers',
+      '/api/v1/transfers/:transferId/cancel',
+      '/api/v3/profiles/:profileId/transfers/:transferId/payments'
+    ],
+    (req, res, next) => {
   if (Math.random() < failRatio) {
     const error = errors[Math.floor(Math.random() * errors.length)];
     if (error === 'timeout') {

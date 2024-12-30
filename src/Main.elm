@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Api exposing (ApiState(..), Status(..), allLoaded, anyFailed, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
+import Api exposing (ApiState(..), Status(..), allLoaded, anyFailed, apiKeyView, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import Error exposing (errorsView)
@@ -56,7 +56,7 @@ type alias Model =
     , quotes : List (Status QuoteReq Quote)
     , transferForm : TransferForm
     , transfers : List (Status AnyTransferReq Transfer)
-    , fundings : List (Status () Funding)
+    , fundings : List (Status Int Funding)
     }
 
 
@@ -147,11 +147,14 @@ withRecipients model recipients =
     { model | recipients = recipients }
 
 
-addFunding : Model -> Status () Funding -> Model
+addFunding : Model -> Status Int Funding -> Model
 addFunding model funding =
     case funding of
         Loaded f ->
-            { model | fundings = changeFirstLoadingToLoaded f model.fundings }
+            { model | fundings = changeFirstMatchingLoadingToLoaded ((==) f.transferId) f model.fundings }
+
+        Failed transferId ->
+            { model | fundings = changeFirstMatchingLoadingToFailed ((==) transferId) model.fundings }
 
         _ ->
             model
@@ -197,7 +200,8 @@ type Msg
     | GotTransfer (Result ( Http.Error, AnyTransferReq ) Transfer)
     | CancelTransfer
     | SubmitFunding
-    | GotFunding (Result Http.Error Funding)
+    | ResubmitFailedFunding
+    | GotFunding (Result ( Http.Error, Int ) Funding)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -391,15 +395,37 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( SubmitFunding, Connected key, Loaded profile ) ->
             if allLoaded model.transfers then
-                ( { model | fundings = List.map (\_ -> Loading ()) model.transfers }
+                ( { model | fundings = List.map (\t -> Loading t.id) <| loadedValues model.transfers }
                 , submitFundings key profile.id <| loadedValues model.transfers
                 )
 
             else
                 ( withError model "Invalid Transfer", Cmd.none )
 
+        ( ResubmitFailedFunding, Connected key, Loaded profile ) ->
+            Tuple.mapBoth
+                (\fundings -> { model | fundings = fundings })
+                (\cmds -> Cmd.batch cmds)
+            <|
+                List.unzip <|
+                    List.map
+                        (\f ->
+                            case f of
+                                Failed transferId ->
+                                    ( Loading transferId, postFunding key profile.id transferId GotFunding )
+
+                                _ ->
+                                    ( f, Cmd.none )
+                        )
+                        model.fundings
+
         ( GotFunding response, _, _ ) ->
-            handleResultAndStop response <| addFunding model
+            case response of
+                Ok funding ->
+                    ( addFunding model <| Loaded funding, Cmd.none )
+
+                Err ( e, transferId ) ->
+                    ( addError e <| addFunding model <| Failed transferId, Cmd.none )
 
         _ ->
             ( withError model "Invalid operation", Cmd.none )
@@ -594,10 +620,14 @@ fundingFormView model =
                     )
                     model.transfers
             then
-                button [ type_ "button", onClick ResubmitFailedTransfer ] [ text "Retry failed" ]
+                button [ type_ "button", onClick ResubmitFailedTransfer ] [ text "Retry failed cancel" ]
 
             else
                 text ""
 
         _ ->
-            text ""
+            if anyFailed model.fundings then
+                button [ type_ "button", onClick ResubmitFailedFunding ] [ text "Retry failed fund" ]
+
+            else
+                text ""
