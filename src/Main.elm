@@ -78,9 +78,9 @@ init ( seed, seedExtension ) =
     )
 
 
-addError : Error -> Model -> Model
-addError error ({ errors } as model) =
-    { model | errors = httpErrorToString error :: errors }
+addError : String -> Error -> Model -> Model
+addError prefix error ({ errors } as model) =
+    { model | errors = (prefix ++ ": " ++ httpErrorToString error) :: errors }
 
 
 withProfile : Model -> Status () Profile -> Model
@@ -228,6 +228,7 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( GotProfiles response, Connected key, _ ) ->
             handleResultAndLoad
+                "Profiles"
                 response
                 (findPersonalProfile >> Result.fromMaybe "Personal profile not found")
                 (withProfile model)
@@ -235,7 +236,7 @@ update msg ({ quoteForm, transferForm } as model) =
                 (getBalances key GotBalances)
 
         ( GotBalances response, _, _ ) ->
-            handleResultAndStop response (withBalances model)
+            handleResultAndStop "Balances" response (withBalances model)
 
         ( GotRate response, _, _ ) ->
             case response of
@@ -243,10 +244,10 @@ update msg ({ quoteForm, transferForm } as model) =
                     ( { model | quoteForm = { quoteForm | limit = rateAdjustedLimit rate.rate } }, Cmd.none )
 
                 Err e ->
-                    ( addError e model, Cmd.none )
+                    ( addError "Rate" e model, Cmd.none )
 
         ( GotRecipients response, _, _ ) ->
-            handleResultAndStop response (withRecipients model)
+            handleResultAndStop "Recipients" response (withRecipients model)
 
         ( ChangeAmount val, _, _ ) ->
             ( { model | quoteForm = { quoteForm | amount = Maybe.withDefault 0 (String.toFloat val) } }, Cmd.none )
@@ -319,7 +320,7 @@ update msg ({ quoteForm, transferForm } as model) =
                     ( addQuote model <| Loaded quote, Cmd.none )
 
                 Err ( e, req ) ->
-                    ( addError e <| addQuote model <| Failed req, Cmd.none )
+                    ( addError "Quote" e <| addQuote model <| Failed req, Cmd.none )
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
@@ -382,7 +383,7 @@ update msg ({ quoteForm, transferForm } as model) =
                     ( addTransfer model <| Loaded transfer, Cmd.none )
 
                 Err ( e, req ) ->
-                    ( addError e <| addTransfer model <| Failed req, Cmd.none )
+                    ( addError "Transfer" e <| addTransfer model <| Failed req, Cmd.none )
 
         ( CancelTransfer, Connected key, _ ) ->
             if allLoaded model.transfers then
@@ -425,14 +426,14 @@ update msg ({ quoteForm, transferForm } as model) =
                     ( addFunding model <| Loaded funding, Cmd.none )
 
                 Err ( e, transferId ) ->
-                    ( addError e <| addFunding model <| Failed transferId, Cmd.none )
+                    ( addError "Funding" e <| addFunding model <| Failed transferId, Cmd.none )
 
         _ ->
             ( withError model "Invalid operation", Cmd.none )
 
 
-handleResultAndExecute : Result Http.Error a -> (a -> Result String b) -> (Status () b -> Model) -> (Result String b -> Cmd Msg) -> ( Model, Cmd Msg )
-handleResultAndExecute response mod with cmd =
+handleResultAndExecute : String -> Result Http.Error a -> (a -> Result String b) -> (Status () b -> Model) -> (Result String b -> Cmd Msg) -> ( Model, Cmd Msg )
+handleResultAndExecute prefix response mod with cmd =
     case response of
         Ok value ->
             case mod value of
@@ -443,17 +444,17 @@ handleResultAndExecute response mod with cmd =
                     ( withError (with NotLoaded) e, cmd (Err e) )
 
         Err e ->
-            ( addError e <| with <| Failed (), Cmd.none )
+            ( addError prefix e <| with <| Failed (), Cmd.none )
 
 
-handleResultAndStop : Result Http.Error a -> (Status () a -> Model) -> ( Model, Cmd Msg )
-handleResultAndStop response with =
-    handleResultAndExecute response Ok with (\_ -> Cmd.none)
+handleResultAndStop : String -> Result Http.Error a -> (Status () a -> Model) -> ( Model, Cmd Msg )
+handleResultAndStop prefix response with =
+    handleResultAndExecute prefix response Ok with (\_ -> Cmd.none)
 
 
-handleResultAndLoad : Result Http.Error a -> (a -> Result String b) -> (Status () b -> Model) -> (Model -> Status () x -> Model) -> (b -> Cmd Msg) -> ( Model, Cmd Msg )
-handleResultAndLoad response mod with with2 cmd =
-    handleResultAndExecute response mod (with >> (\model -> with2 model <| Loading ())) <|
+handleResultAndLoad : String -> Result Http.Error a -> (a -> Result String b) -> (Status () b -> Model) -> (Model -> Status () x -> Model) -> (b -> Cmd Msg) -> ( Model, Cmd Msg )
+handleResultAndLoad prefix response mod with with2 cmd =
+    handleResultAndExecute prefix response mod (with >> (\model -> with2 model <| Loading ())) <|
         Result.map cmd
             >> Result.withDefault Cmd.none
 
