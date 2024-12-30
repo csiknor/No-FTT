@@ -105,7 +105,7 @@ addQuote model quote =
             { model | quotes = changeFirstMatchingLoadingToLoaded (\r -> r.sourceAmount == q.sourceAmount) q model.quotes }
 
         Failed req ->
-            { model | quotes = changeFirstMatchingLoadingToFailed (\r -> r.sourceAmount == req.sourceAmount) model.quotes }
+            { model | quotes = changeFirstMatchingLoadingToFailed ((==) req) model.quotes }
 
         _ ->
             model
@@ -120,7 +120,20 @@ addTransfer : Model -> Status AnyTransferReq Transfer -> Model
 addTransfer model transfer =
     case transfer of
         Loaded t ->
-            { model | transfers = changeFirstLoadingToLoaded t model.transfers }
+            { model
+                | transfers =
+                    changeFirstMatchingLoadingToLoaded
+                        (\r ->
+                            case r of
+                                CreateTransferReq transferReq ->
+                                    transferReq.quoteUuid == t.quoteUuid
+
+                                CancelTransferReq transferId ->
+                                    transferId == t.id
+                        )
+                        t
+                        model.transfers
+            }
 
         Failed req ->
             { model | transfers = changeFirstMatchingLoadingToFailed ((==) req) model.transfers }
