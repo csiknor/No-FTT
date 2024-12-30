@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Api exposing (ApiState(..), Status(..), allLoaded, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
+import Api exposing (ApiState(..), Status(..), allLoaded, anyFailed, apiKeyView, changeFirstLoadingToLoaded, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import Error exposing (errorsView)
@@ -16,7 +16,7 @@ import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import String.Interpolate exposing (interpolate)
-import Transfer exposing (Funding, Transfer, fundingsView, postFunding, postTransfer, putTransferCancel, transfersView)
+import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, postFunding, postTransfer, putTransferCancel, transfersView)
 
 
 
@@ -55,7 +55,7 @@ type alias Model =
     , quoteForm : QuoteForm
     , quotes : List (Status QuoteReq Quote)
     , transferForm : TransferForm
-    , transfers : List (Status () Transfer)
+    , transfers : List (Status AnyTransferReq Transfer)
     , fundings : List (Status () Funding)
     }
 
@@ -116,11 +116,14 @@ withQuotes model quotes =
     { model | quotes = quotes }
 
 
-addTransfer : Model -> Status () Transfer -> Model
+addTransfer : Model -> Status AnyTransferReq Transfer -> Model
 addTransfer model transfer =
     case transfer of
         Loaded t ->
             { model | transfers = changeFirstLoadingToLoaded t model.transfers }
+
+        Failed req ->
+            { model | transfers = changeFirstMatchingLoadingToFailed ((==) req) model.transfers }
 
         _ ->
             model
@@ -177,7 +180,8 @@ type Msg
     | GotQuote (Result ( Http.Error, QuoteReq ) Quote)
     | ChangeReference String
     | SubmitTransfer
-    | GotTransfer (Result Http.Error Transfer)
+    | ResubmitFailedTransfer
+    | GotTransfer (Result ( Http.Error, AnyTransferReq ) Transfer)
     | CancelTransfer
     | SubmitFunding
     | GotFunding (Result Http.Error Funding)
@@ -308,11 +312,25 @@ update msg ({ quoteForm, transferForm } as model) =
                 Just acc ->
                     if allLoaded model.quotes then
                         let
-                            ( quoteIdsAndUuids, newSeed ) =
+                            ( quoteAndTransactionIds, newSeed ) =
                                 generateAndPairUuids model.seed <| List.map .id <| loadedValues model.quotes
+
+                            reqs =
+                                List.indexedMap
+                                    (\i ( quoteId, transactionId ) ->
+                                        { targetAccount = acc
+                                        , quoteUuid = quoteId
+                                        , customerTransactionId = Uuid.toString transactionId
+                                        , reference =
+                                            interpolate
+                                                (model.transferForm.reference ++ " {0}/{1}")
+                                                [ String.fromInt (i + 1), String.fromInt (List.length quoteAndTransactionIds) ]
+                                        }
+                                    )
+                                    quoteAndTransactionIds
                         in
-                        ( { model | transfers = List.map (\_ -> Loading ()) quoteIdsAndUuids, seed = newSeed }
-                        , submitTransfers key acc quoteIdsAndUuids model.transferForm.reference
+                        ( { model | transfers = List.map (\r -> Loading <| CreateTransferReq r) reqs, seed = newSeed }
+                        , Cmd.batch <| List.map (\r -> postTransfer key r GotTransfer) reqs
                         )
 
                     else
@@ -321,12 +339,37 @@ update msg ({ quoteForm, transferForm } as model) =
                 _ ->
                     ( withError model "Invalid Quotes", Cmd.none )
 
+        ( ResubmitFailedTransfer, Connected key, _ ) ->
+            Tuple.mapBoth
+                (\transfers -> { model | transfers = transfers })
+                (\cmds -> Cmd.batch cmds)
+            <|
+                List.unzip <|
+                    List.map
+                        (\t ->
+                            case t of
+                                Failed (CreateTransferReq transferReq) ->
+                                    ( Loading (CreateTransferReq transferReq), postTransfer key transferReq GotTransfer )
+
+                                Failed (CancelTransferReq transferId) ->
+                                    ( Loading (CancelTransferReq transferId), putTransferCancel key transferId GotTransfer )
+
+                                _ ->
+                                    ( t, Cmd.none )
+                        )
+                        model.transfers
+
         ( GotTransfer response, _, _ ) ->
-            handleResultAndStop response <| addTransfer model
+            case response of
+                Ok transfer ->
+                    ( addTransfer model <| Loaded transfer, Cmd.none )
+
+                Err ( e, req ) ->
+                    ( addError e <| addTransfer model <| Failed req, Cmd.none )
 
         ( CancelTransfer, Connected key, _ ) ->
             if allLoaded model.transfers then
-                ( { model | transfers = List.map (\_ -> Loading ()) model.transfers }
+                ( { model | transfers = List.map (\t -> Loading <| CancelTransferReq t.id) <| loadedValues model.transfers }
                 , cancelTransfers key <| loadedValues model.transfers
                 )
 
@@ -410,25 +453,6 @@ generateAndPairUuids start list =
         list
 
 
-submitTransfers : String -> Int -> List ( String, Uuid ) -> String -> Cmd Msg
-submitTransfers key targetAccount quoteAndTransactionIds reference =
-    Cmd.batch <|
-        List.indexedMap
-            (\i ( quoteId, transactionId ) ->
-                postTransfer key
-                    { targetAccount = targetAccount
-                    , quoteUuid = quoteId
-                    , customerTransactionId = Uuid.toString transactionId
-                    , reference =
-                        interpolate
-                            (reference ++ " {0}/{1}")
-                            [ String.fromInt (i + 1), String.fromInt (List.length quoteAndTransactionIds) ]
-                    }
-                    GotTransfer
-            )
-            quoteAndTransactionIds
-
-
 cancelTransfers : String -> List Transfer -> Cmd Msg
 cancelTransfers key transfers =
     Cmd.batch <|
@@ -492,18 +516,7 @@ quoteFormView model =
                             _ ->
                                 []
                        )
-                    ++ (if
-                            List.any
-                                (\s ->
-                                    case s of
-                                        Failed _ ->
-                                            True
-
-                                        _ ->
-                                            False
-                                )
-                                model.quotes
-                        then
+                    ++ (if anyFailed model.quotes then
                             [ button [ type_ "button", onClick ResubmitFailedQuote ] [ text "Retry failed" ] ]
 
                         else
@@ -516,19 +529,34 @@ quoteFormView model =
 
 transferFormView : Model -> Html Msg
 transferFormView model =
-    case model.transfers of
-        [] ->
-            if allLoaded model.quotes then
+    if allLoaded model.quotes then
+        case model.transfers of
+            [] ->
                 form [ onSubmit SubmitTransfer ] <|
                     [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
                     , input [ type_ "submit", value "Transfer" ] []
                     ]
 
-            else
-                text ""
+            _ ->
+                if
+                    List.any
+                        (\t ->
+                            case t of
+                                Failed (CreateTransferReq _) ->
+                                    True
 
-        _ ->
-            text ""
+                                _ ->
+                                    False
+                        )
+                        model.transfers
+                then
+                    button [ type_ "button", onClick ResubmitFailedTransfer ] [ text "Retry failed" ]
+
+                else
+                    text ""
+
+    else
+        text ""
 
 
 fundingFormView : Model -> Html Msg
@@ -540,6 +568,20 @@ fundingFormView model =
                     [ input [ type_ "submit", value "Fund" ] []
                     , button [ type_ "button", onClick CancelTransfer ] [ text "Cancel" ]
                     ]
+
+            else if
+                List.any
+                    (\t ->
+                        case t of
+                            Failed (CancelTransferReq _) ->
+                                True
+
+                            _ ->
+                                False
+                    )
+                    model.transfers
+            then
+                button [ type_ "button", onClick ResubmitFailedTransfer ] [ text "Retry failed" ]
 
             else
                 text ""

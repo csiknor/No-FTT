@@ -1,6 +1,6 @@
-module Transfer exposing (Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, postFunding, postTransfer, putTransferCancel, transfersView)
+module Transfer exposing (AnyTransferReq(..), Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, postFunding, postTransfer, putTransferCancel, transfersView)
 
-import Api exposing (Status(..), wiseApiPost, wiseApiPut)
+import Api exposing (Status(..), wiseApiPost, wiseApiPut, wrapError)
 import Html exposing (Html, div, text)
 import Http
 import Json.Decode as D
@@ -10,6 +10,11 @@ import Url.Builder as B
 
 
 -- MODEL
+
+
+type AnyTransferReq
+    = CreateTransferReq TransferReq
+    | CancelTransferReq Int
 
 
 type alias TransferReq =
@@ -48,7 +53,7 @@ type FundingStatus
 -- VIEW
 
 
-transfersView : List (Status () Transfer) -> Html msg
+transfersView : List (Status AnyTransferReq Transfer) -> Html msg
 transfersView list =
     case list of
         [] ->
@@ -58,7 +63,7 @@ transfersView list =
             div [] <| List.map transferView list
 
 
-transferView : Status () Transfer -> Html msg
+transferView : Status AnyTransferReq Transfer -> Html msg
 transferView status =
     case status of
         Loading _ ->
@@ -76,6 +81,12 @@ transferView status =
                             text ""
                     ]
                 ]
+
+        Failed (CreateTransferReq req) ->
+            div [] [ text <| "Failed to create transfer for quote " ++ req.quoteUuid ]
+
+        Failed (CancelTransferReq transferId) ->
+            div [] [ text <| "Failed to cancel transfer " ++ String.fromInt transferId ]
 
         _ ->
             text ""
@@ -136,12 +147,12 @@ transfersUrl =
     "/v1/transfers"
 
 
-postTransfer : String -> TransferReq -> (Result Http.Error Transfer -> msg) -> Cmd msg
+postTransfer : String -> TransferReq -> (Result ( Http.Error, AnyTransferReq ) Transfer -> msg) -> Cmd msg
 postTransfer token req msg =
     wiseApiPost
         { path = transfersUrl
         , body = Http.jsonBody (transferEncoder req)
-        , expect = Http.expectJson msg transferDecoder
+        , expect = Http.expectJson (wrapError (CreateTransferReq req) msg) transferDecoder
         , token = token
         }
 
@@ -151,12 +162,12 @@ cancelTransferApi transferId =
     B.absolute [ "v1", "transfers", String.fromInt transferId, "cancel" ] []
 
 
-putTransferCancel : String -> Int -> (Result Http.Error Transfer -> msg) -> Cmd msg
+putTransferCancel : String -> Int -> (Result ( Http.Error, AnyTransferReq ) Transfer -> msg) -> Cmd msg
 putTransferCancel token transferId msg =
     wiseApiPut
         { path = cancelTransferApi transferId
         , body = Http.emptyBody
-        , expect = Http.expectJson msg transferDecoder
+        , expect = Http.expectJson (wrapError (CancelTransferReq transferId) msg) transferDecoder
         , token = token
         }
 

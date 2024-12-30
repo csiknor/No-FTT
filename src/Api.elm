@@ -2,6 +2,7 @@ module Api exposing
     ( ApiState(..)
     , Status(..)
     , allLoaded
+    , anyFailed
     , apiKeyView
     , changeFirstLoadingToLoaded
     , changeFirstMatchingLoading
@@ -121,6 +122,19 @@ loadedValues =
 
                 _ ->
                     Nothing
+        )
+
+
+anyFailed : List (Status a b) -> Bool
+anyFailed =
+    List.any
+        (\s ->
+            case s of
+                Failed _ ->
+                    True
+
+                _ ->
+                    False
         )
 
 
