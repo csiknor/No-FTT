@@ -14,10 +14,13 @@ module Api exposing
     , wrapError
     )
 
-import Html exposing (Html, button, form, input, label, text)
+import CSS.Attributes exposing (class, classList)
+import CSS.Bootstrap exposing (alignItemsCenter, btn, btnPrimary, colFormLabel, formControl, formLabel, g3, row, rowColsLgAuto, visuallyHidden)
+import Html exposing (Html, button, div, form, input, label, text)
 import Html.Attributes exposing (autocomplete, for, id, name, placeholder, required, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect, emptyBody, header)
+import Utils exposing (classes)
 
 
 
@@ -137,12 +140,16 @@ anyFailed =
 
 apiKeyView : ApiState -> (String -> msg) -> msg -> Html msg
 apiKeyView state change submit =
-    form [ onSubmit submit ]
-        [ label [ for "username-input" ] [ text "Username" ]
-        , input [ id "username-input", name "username", type_ "text", placeholder "Enter your username", required True, autocomplete True ] []
-        , label [ for "api-key-input" ] [ text "API key" ]
-        , input [ id "api-key-input", name "api-key", type_ "password", placeholder "Enter your API key", value (myApiKey state), onInput change, required True, autocomplete True ] []
-        , button [ type_ "submit" ] [ text "Connect" ]
+    form [ classes [ row, rowColsLgAuto, g3, alignItemsCenter ], onSubmit submit ]
+        [ div []
+            [ label [ class visuallyHidden, for "username-input" ] [ text "Username" ]
+            , input [ class formControl, id "username-input", name "username", type_ "text", placeholder "Enter your username", required True, autocomplete True ] []
+            ]
+        , div []
+            [ label [ class visuallyHidden, for "api-key-input" ] [ text "API key" ]
+            , input [ class formControl, id "api-key-input", name "api-key", type_ "password", placeholder "Enter your API key", value (myApiKey state), onInput change, required True, autocomplete True ] []
+            ]
+        , div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Connect" ] ]
         ]
 
 

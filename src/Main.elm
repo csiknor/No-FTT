@@ -3,6 +3,7 @@ module Main exposing (main)
 import Api exposing (ApiState(..), Status(..), allLoaded, anyFailed, apiKeyView, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
+import CSS.Bootstrap exposing (container, p3)
 import Error exposing (errorsView)
 import Html exposing (Html, button, div, form, input, text)
 import Html.Attributes as A exposing (placeholder, type_, value)
@@ -17,6 +18,7 @@ import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import String.Interpolate exposing (interpolate)
 import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
+import Utils exposing (classes)
 
 
 
@@ -590,7 +592,7 @@ subscriptions _ =
 
 view : Model -> Html Msg
 view model =
-    div []
+    div [ classes [ container, p3 ] ]
         [ errorsView model.errors ClearErrors
         , apiKeyView model.state ChangeApiKey SubmitApiKey
         , profileView model.profile
