@@ -3,10 +3,12 @@ module Main exposing (main)
 import Api exposing (ApiState(..), Status(..), allLoaded, anyFailed, apiKeyView, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
-import CSS.Bootstrap exposing (container, p3)
+import CSS exposing (className)
+import CSS.Attributes exposing (class)
+import CSS.Bootstrap exposing (active, collapse, container, containerFluid, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon)
 import Error exposing (errorsView)
-import Html exposing (Html, button, div, form, input, text)
-import Html.Attributes as A exposing (placeholder, type_, value)
+import Html exposing (Html, a, button, div, form, input, li, nav, span, text, ul)
+import Html.Attributes as A exposing (attribute, href, id, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
@@ -592,10 +594,10 @@ subscriptions _ =
 
 view : Model -> Html Msg
 view model =
-    div [ classes [ container, p3 ] ]
-        [ errorsView model.errors ClearErrors
+    div [ classes [ container ] ]
+        [ headerView <| profileView model.profile
+        , errorsView model.errors ClearErrors
         , apiKeyView model.state ChangeApiKey SubmitApiKey
-        , profileView model.profile
         , pendingTransfersView model.pending CancelPending
         , quoteFormView model
         , quotesView model.quotes
@@ -603,6 +605,24 @@ view model =
         , transfersView model.transfers
         , fundingFormView model
         , fundingsView model.fundings
+        ]
+
+
+headerView : Html a -> Html a
+headerView content =
+    nav [ classes [ navbar, navbarExpandSm, className "bg-body-tertiary", mb3 ] ]
+        [ div [ class containerFluid ]
+            [ span [ classes [ navbarBrand, mb0, h1 ] ] [ text "No-FTT" ]
+            , button [ class navbarToggler, type_ "button", attribute "data-bs-toggle" "collapse", attribute "data-bs-target" "#navbarSupportedContent" ]
+                [ span [ class navbarTogglerIcon ] [] ]
+            , div [ classes [ collapse, navbarCollapse ], id "navbarSupportedContent" ]
+                [ ul [ classes [ navbarNav, meAuto, mb2, mbSm0 ] ]
+                    [ li [ class navItem ] [ a [ classes [ navLink, active ], href "#" ] [ text "Home" ] ]
+                    , li [ class navItem ] [ a [ class navLink, href "#" ] [ text "About" ] ]
+                    ]
+                , span [ class navbarText ] [ content ]
+                ]
+            ]
         ]
 
 

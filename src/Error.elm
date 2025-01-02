@@ -1,7 +1,10 @@
 module Error exposing (errorsView)
 
-import Html exposing (Html, button, div, text)
+import CSS.Bootstrap exposing (alert, alertDanger, alertDismissible, btnClose, fade, listUnstyled, m0, show)
+import Html exposing (Html, button, div, li, strong, text, ul)
+import Html.Attributes exposing (type_)
 import Html.Events exposing (onClick)
+import Utils exposing (classes)
 
 
 
@@ -15,11 +18,13 @@ errorsView errors msg =
             text ""
 
         _ ->
-            div [] <|
-                List.map errorView errors
-                    ++ [ div [] [ button [ onClick msg ] [ text "Clear errors" ] ] ]
+            div [ classes [ alert, alertDanger, alertDismissible, fade, show ] ] <|
+                [ strong [] [ text "Problem!" ]
+                , ul [ classes [ listUnstyled, m0 ] ] <| List.map errorView errors
+                , button [ type_ "button", classes [ btnClose ], onClick msg ] []
+                ]
 
 
 errorView : String -> Html msg
 errorView error =
-    div [] [ text <| "Error: " ++ error ]
+    li [] [ text error ]

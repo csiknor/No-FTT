@@ -140,27 +140,22 @@ anyFailed =
 
 apiKeyView : ApiState -> (String -> msg) -> msg -> Html msg
 apiKeyView state change submit =
-    form [ classes [ row, rowColsLgAuto, g3, alignItemsCenter ], onSubmit submit ]
-        [ div []
-            [ label [ class visuallyHidden, for "username-input" ] [ text "Username" ]
-            , input [ class formControl, id "username-input", name "username", type_ "text", placeholder "Enter your username", required True, autocomplete True ] []
-            ]
-        , div []
-            [ label [ class visuallyHidden, for "api-key-input" ] [ text "API key" ]
-            , input [ class formControl, id "api-key-input", name "api-key", type_ "password", placeholder "Enter your API key", value (myApiKey state), onInput change, required True, autocomplete True ] []
-            ]
-        , div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Connect" ] ]
-        ]
-
-
-myApiKey : ApiState -> String
-myApiKey model =
-    case model of
+    case state of
         NotConnected maybeKey ->
-            Maybe.withDefault "" maybeKey
+            form [ classes [ row, rowColsLgAuto, g3, alignItemsCenter ], onSubmit submit ]
+                [ div []
+                    [ label [ class visuallyHidden, for "username-input" ] [ text "Username" ]
+                    , input [ class formControl, id "username-input", name "username", type_ "text", placeholder "Enter your username", required True, autocomplete True ] []
+                    ]
+                , div []
+                    [ label [ class visuallyHidden, for "api-key-input" ] [ text "API key" ]
+                    , input [ class formControl, id "api-key-input", name "api-key", type_ "password", placeholder "Enter your API key", value (Maybe.withDefault "" maybeKey), onInput change, required True, autocomplete True ] []
+                    ]
+                , div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Connect" ] ]
+                ]
 
-        Connected key ->
-            key
+        Connected _ ->
+            text ""
 
 
 
