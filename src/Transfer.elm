@@ -106,7 +106,7 @@ pendingTransfersView pending msg =
             div [] [ text "Loading pending transfers..." ]
 
         Loaded [] ->
-            text "No pending transfers"
+            text ""
 
         Loaded transfers ->
             div [] <|

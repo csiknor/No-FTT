@@ -1,13 +1,16 @@
 module Balance exposing (Balance, balancesView, getBalances)
 
 import Api exposing (Status(..), wiseApiGet)
-import Html exposing (Html, div, input, li, text, ul)
-import Html.Attributes exposing (checked, name, type_, value)
+import CSS.Attributes exposing (class)
+import CSS.Bootstrap exposing (card, cardBody, cardText, cardTitle, col2, dFlex, flexShrink0, formCheck, formCheckInput, formCheckLabel, me3, overflowAuto, spinnerBorder, visuallyHidden)
+import Html exposing (Html, div, h5, input, label, p, span, text)
+import Html.Attributes exposing (checked, name, style, type_, value)
 import Html.Events exposing (onInput)
 import Http
 import Json.Decode as D exposing (Decoder)
 import Profile exposing (Profile)
 import Url.Builder as B
+import Utils exposing (classes)
 
 
 
@@ -30,10 +33,10 @@ balancesView : Maybe String -> Status () (List Balance) -> (String -> msg) -> Ht
 balancesView curr status msg =
     case status of
         Loading _ ->
-            div [] [ text "Loading balances..." ]
+            div [ class spinnerBorder ] [ span [ class visuallyHidden ] [ text "Loading balances..." ] ]
 
         Loaded balances ->
-            ul [] <| List.map (balanceView curr msg) balances
+            div [ classes [ dFlex, overflowAuto ] ] <| List.map (balanceView curr msg) balances
 
         _ ->
             text ""
@@ -41,16 +44,24 @@ balancesView curr status msg =
 
 balanceView : Maybe String -> (String -> msg) -> Balance -> Html msg
 balanceView curr msg balance =
-    li []
-        [ input
-            [ type_ "radio"
-            , name "sourceCurrency"
-            , value balance.currency
-            , checked <| Maybe.map ((==) balance.currency) >> Maybe.withDefault False <| curr
-            , onInput msg
+    div [ classes [ card, flexShrink0, me3, col2 ], style "width" "10rem" ]
+        [ div [ class cardBody ]
+            [ h5 [ class cardTitle ] [ text <| Maybe.withDefault balance.currency balance.name ]
+            , p [ class cardText ]
+                [ div [ class formCheck ]
+                    [ input
+                        [ class formCheckInput
+                        , type_ "radio"
+                        , name "sourceCurrency"
+                        , value balance.currency
+                        , checked <| Maybe.withDefault False <| Maybe.map ((==) balance.currency) <| curr
+                        , onInput msg
+                        ]
+                        []
+                    , label [ class formCheckLabel ] [ text <| String.fromFloat balance.amount ]
+                    ]
+                ]
             ]
-            []
-        , text (balance.currency ++ " " ++ String.fromFloat balance.amount)
         ]
 
 
