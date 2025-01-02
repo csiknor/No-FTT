@@ -14,9 +14,9 @@ module Api exposing
     , wrapError
     )
 
-import Html exposing (Html, input)
-import Html.Attributes exposing (placeholder, type_, value)
-import Html.Events exposing (onInput)
+import Html exposing (Html, button, form, input, label, text)
+import Html.Attributes exposing (autocomplete, for, id, name, placeholder, required, type_, value)
+import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect, emptyBody, header)
 
 
@@ -135,9 +135,15 @@ anyFailed =
 -- VIEW
 
 
-apiKeyView : ApiState -> (String -> msg) -> Html msg
-apiKeyView state msg =
-    input [ type_ "password", placeholder "Enter your API key", value (myApiKey state), onInput msg ] []
+apiKeyView : ApiState -> (String -> msg) -> msg -> Html msg
+apiKeyView state change submit =
+    form [ onSubmit submit ]
+        [ label [ for "username-input" ] [ text "Username" ]
+        , input [ id "username-input", name "username", type_ "text", placeholder "Enter your username", required True, autocomplete True ] []
+        , label [ for "api-key-input" ] [ text "API key" ]
+        , input [ id "api-key-input", name "api-key", type_ "password", placeholder "Enter your API key", value (myApiKey state), onInput change, required True, autocomplete True ] []
+        , button [ type_ "submit" ] [ text "Connect" ]
+        ]
 
 
 myApiKey : ApiState -> String

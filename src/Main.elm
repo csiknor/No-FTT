@@ -216,6 +216,7 @@ addPending model transfer =
 
 type Msg
     = ChangeApiKey String
+    | SubmitApiKey
     | ClearErrors
     | GotProfiles (Result Http.Error (List Profile))
     | GotBalances (Result Http.Error (List Balance))
@@ -245,6 +246,16 @@ update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ quoteForm, transferForm } as model) =
     case ( msg, model.state, model.profile ) of
         ( ChangeApiKey key, _, _ ) ->
+            ( resetQuotes
+                { model
+                    | state = NotConnected <| Just key
+                    , profile = NotLoaded
+                    , balances = NotLoaded
+                }
+            , Cmd.none
+            )
+
+        ( SubmitApiKey, NotConnected (Just key), _ ) ->
             if Uuid.isValidUuid key then
                 ( resetQuotes { model | state = Connected key, profile = Loading (), balances = NotLoaded }
                 , Cmd.batch
@@ -254,14 +265,7 @@ update msg ({ quoteForm, transferForm } as model) =
                 )
 
             else
-                ( resetQuotes
-                    { model
-                        | state = NotConnected <| Just key
-                        , profile = NotLoaded
-                        , balances = NotLoaded
-                    }
-                , Cmd.none
-                )
+                ( withError model "Invalid API key", Cmd.none )
 
         ( ClearErrors, _, _ ) ->
             ( { model | errors = [] }, Cmd.none )
@@ -588,7 +592,7 @@ view : Model -> Html Msg
 view model =
     div []
         [ errorsView model.errors ClearErrors
-        , apiKeyView model.state ChangeApiKey
+        , apiKeyView model.state ChangeApiKey SubmitApiKey
         , profileView model.profile
         , pendingTransfersView model.pending CancelPending
         , quoteFormView model
