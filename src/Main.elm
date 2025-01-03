@@ -5,10 +5,10 @@ import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import CSS exposing (className)
 import CSS.Attributes exposing (class)
-import CSS.Bootstrap exposing (active, collapse, container, containerFluid, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon)
+import CSS.Bootstrap exposing (active, alignItemsCenter, btn, btnPrimary, collapse, container, containerFluid, formControl, g3, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon, row, rowColsLgAuto, visuallyHidden)
 import Error exposing (errorsView)
-import Html exposing (Html, a, button, div, form, input, li, nav, span, text, ul)
-import Html.Attributes as A exposing (attribute, href, id, placeholder, type_, value)
+import Html exposing (Html, a, button, div, form, input, label, li, nav, span, text, ul)
+import Html.Attributes as A exposing (attribute, for, href, id, placeholder, type_, value)
 import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
@@ -630,22 +630,30 @@ quoteFormView : Model -> Html Msg
 quoteFormView model =
     case model.state of
         Connected _ ->
-            form [ onSubmit SubmitQuote ] <|
+            div [] <|
                 [ balancesView model.quoteForm.currency model.balances ChangeSourceCurrency
                 , recipientsView model.quoteForm.account model.recipients ChangeTargetAccount
                 ]
-                    ++ (case model.quoteForm.account of
+                    ++ List.singleton
+                        (case model.quoteForm.account of
                             Just _ ->
-                                [ input [ type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat model.quoteForm.amount), onInput ChangeAmount ] []
-                                , input [ type_ "number", placeholder "Limit", A.min "1", value (String.fromFloat model.quoteForm.limit), onInput ChangeLimit ] []
-                                , input [ type_ "submit", value "Split & Quote" ] []
-                                ]
+                                form [ classes [ row, rowColsLgAuto, g3, alignItemsCenter ], onSubmit SubmitQuote ]
+                                    [ div []
+                                        [ label [ class visuallyHidden, for "amount-input" ] [ text "Amount" ]
+                                        , input [ class formControl, id "amount-input", type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat model.quoteForm.amount), onInput ChangeAmount ] []
+                                        ]
+                                    , div []
+                                        [ label [ class visuallyHidden, for "limit-input" ] [ text "Limit" ]
+                                        , input [ class formControl, id "limit-input", type_ "number", placeholder "Limit", A.min "1", value (String.fromFloat model.quoteForm.limit), onInput ChangeLimit ] []
+                                        ]
+                                    , div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Split & Quote" ] ]
+                                    ]
 
                             _ ->
-                                []
-                       )
+                                text ""
+                        )
                     ++ (if anyFailed model.quotes then
-                            [ button [ type_ "button", onClick ResubmitFailedQuote ] [ text "Retry failed" ] ]
+                            [ div [] [ button [ type_ "button", onClick ResubmitFailedQuote ] [ text "Retry failed" ] ] ]
 
                         else
                             []
