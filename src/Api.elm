@@ -14,8 +14,8 @@ module Api exposing
     , wrapError
     )
 
-import CSS.Attributes exposing (class, classList)
-import CSS.Bootstrap exposing (alignItemsCenter, btn, btnPrimary, colFormLabel, formControl, formLabel, g3, row, rowColsLgAuto, visuallyHidden)
+import CSS.Attributes exposing (class)
+import CSS.Bootstrap exposing (alignItemsCenter, btn, btnPrimary, formControl, g3, row, rowColsLgAuto, visuallyHidden)
 import Html exposing (Html, button, div, form, input, label, text)
 import Html.Attributes exposing (autocomplete, for, id, name, placeholder, required, type_, value)
 import Html.Events exposing (onInput, onSubmit)
