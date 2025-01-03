@@ -633,34 +633,41 @@ quoteFormView model =
             div [] <|
                 [ balancesView model.quoteForm.currency model.balances ChangeSourceCurrency
                 , recipientsView model.quoteForm.account model.recipients ChangeTargetAccount
+                , splitAndQuoteFormView model.quoteForm
+                , retryQuotesView model.quotes
                 ]
-                    ++ List.singleton
-                        (case model.quoteForm.account of
-                            Just _ ->
-                                form [ classes [ row, rowColsLgAuto, g3, alignItemsCenter ], onSubmit SubmitQuote ]
-                                    [ div []
-                                        [ label [ class visuallyHidden, for "amount-input" ] [ text "Amount" ]
-                                        , input [ class formControl, id "amount-input", type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat model.quoteForm.amount), onInput ChangeAmount ] []
-                                        ]
-                                    , div []
-                                        [ label [ class visuallyHidden, for "limit-input" ] [ text "Limit" ]
-                                        , input [ class formControl, id "limit-input", type_ "number", placeholder "Limit", A.min "1", value (String.fromFloat model.quoteForm.limit), onInput ChangeLimit ] []
-                                        ]
-                                    , div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Split & Quote" ] ]
-                                    ]
-
-                            _ ->
-                                text ""
-                        )
-                    ++ (if anyFailed model.quotes then
-                            [ div [] [ button [ type_ "button", onClick ResubmitFailedQuote ] [ text "Retry failed" ] ] ]
-
-                        else
-                            []
-                       )
 
         _ ->
             text ""
+
+
+splitAndQuoteFormView : QuoteForm -> Html Msg
+splitAndQuoteFormView quoteForm =
+    case quoteForm.account of
+        Just _ ->
+            form [ classes [ row, rowColsLgAuto, g3, alignItemsCenter ], onSubmit SubmitQuote ]
+                [ div []
+                    [ label [ class visuallyHidden, for "amount-input" ] [ text "Amount" ]
+                    , input [ class formControl, id "amount-input", type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat quoteForm.amount), onInput ChangeAmount ] []
+                    ]
+                , div []
+                    [ label [ class visuallyHidden, for "limit-input" ] [ text "Limit" ]
+                    , input [ class formControl, id "limit-input", type_ "number", placeholder "Limit", A.min "1", value (String.fromFloat quoteForm.limit), onInput ChangeLimit ] []
+                    ]
+                , div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Split & Quote" ] ]
+                ]
+
+        _ ->
+            text ""
+
+
+retryQuotesView : List (Status QuoteReq Quote) -> Html Msg
+retryQuotesView quotes =
+    if anyFailed quotes then
+        div [] [ button [ type_ "button", onClick ResubmitFailedQuote ] [ text "Retry failed" ] ]
+
+    else
+        text ""
 
 
 transferFormView : Model -> Html Msg
