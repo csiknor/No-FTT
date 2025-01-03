@@ -1,12 +1,15 @@
 module Recipient exposing (Recipient, getRecipients, recipientsView)
 
 import Api exposing (Status(..), wiseApiGet)
-import Html exposing (Html, div, input, li, text, ul)
-import Html.Attributes exposing (checked, name, type_, value)
-import Html.Events exposing (onInput)
+import CSS.Attributes exposing (class, classList)
+import CSS.Bootstrap exposing (active, col6, fwBold, listGroup, listGroupItem, listGroupItemAction, mb3, spinnerBorder, visuallyHidden)
+import Html exposing (Html, a, div, span, text)
+import Html.Attributes exposing (href)
+import Html.Events exposing (onClick)
 import Http
 import Json.Decode as D
 import Url.Builder as B
+import Utils exposing (classes)
 
 
 
@@ -16,6 +19,7 @@ import Url.Builder as B
 type alias Recipient =
     { id : Int
     , name : String
+    , nickname : Maybe String
     , currency : String
     , accountSummary : String
     , longAccountSummary : String
@@ -31,10 +35,10 @@ recipientsView : Maybe Int -> Status () (List Recipient) -> (String -> msg) -> H
 recipientsView acc status msg =
     case status of
         Loading _ ->
-            div [] [ text "Loading recipients..." ]
+            div [ class spinnerBorder ] [ span [ class visuallyHidden ] [ text "Loading recipients..." ] ]
 
         Loaded recipients ->
-            ul [] <| List.map (recipientView acc msg) recipients
+            div [ classes [ listGroup, mb3, col6 ] ] <| List.map (recipientView acc msg) recipients
 
         _ ->
             text ""
@@ -42,16 +46,14 @@ recipientsView acc status msg =
 
 recipientView : Maybe Int -> (String -> msg) -> Recipient -> Html msg
 recipientView acc msg recipient =
-    li []
-        [ input
-            [ type_ "radio"
-            , name "targetAccount"
-            , checked <| Maybe.map ((==) recipient.id) >> Maybe.withDefault False <| acc
-            , value (String.fromInt recipient.id)
-            , onInput msg
-            ]
-            []
-        , text (recipient.name ++ " " ++ recipient.accountSummary)
+    a
+        [ href "#"
+        , classes [ listGroupItem, listGroupItemAction ]
+        , classList [ ( active, acc |> Maybe.map ((==) recipient.id) |> Maybe.withDefault False ) ]
+        , onClick <| msg <| String.fromInt recipient.id
+        ]
+        [ div [ class fwBold ] [ text <| recipient.name ++ (recipient.nickname |> Maybe.map (\t -> " (" ++ t ++ ")") |> Maybe.withDefault "") ]
+        , text recipient.accountSummary
         ]
 
 
@@ -75,9 +77,10 @@ getRecipients token profileId currency msg =
 
 recipientDecoder : D.Decoder Recipient
 recipientDecoder =
-    D.map6 Recipient
+    D.map7 Recipient
         (D.field "id" D.int)
         (D.at [ "name", "fullName" ] D.string)
+        (D.maybe <| D.field "nickname" D.string)
         (D.field "currency" D.string)
         (D.field "accountSummary" D.string)
         (D.field "longAccountSummary" D.string)

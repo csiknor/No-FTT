@@ -2,7 +2,7 @@ module Balance exposing (Balance, balancesView, getBalances)
 
 import Api exposing (Status(..), wiseApiGet)
 import CSS.Attributes exposing (class)
-import CSS.Bootstrap exposing (card, cardBody, cardText, cardTitle, col2, dFlex, flexShrink0, formCheck, formCheckInput, formCheckLabel, me3, overflowAuto, spinnerBorder, visuallyHidden)
+import CSS.Bootstrap exposing (card, cardBody, cardText, cardTitle, col2, dFlex, flexShrink0, formCheck, formCheckInput, formCheckLabel, mb3, me3, overflowAuto, spinnerBorder, visuallyHidden)
 import Html exposing (Html, div, h5, input, label, p, span, text)
 import Html.Attributes exposing (checked, name, style, type_, value)
 import Html.Events exposing (onInput)
@@ -36,7 +36,7 @@ balancesView curr status msg =
             div [ class spinnerBorder ] [ span [ class visuallyHidden ] [ text "Loading balances..." ] ]
 
         Loaded balances ->
-            div [ classes [ dFlex, overflowAuto ] ] <| List.map (balanceView curr msg) balances
+            div [ classes [ dFlex, overflowAuto, mb3 ] ] <| List.map (balanceView curr msg) balances
 
         _ ->
             text ""
