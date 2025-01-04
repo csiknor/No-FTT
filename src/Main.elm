@@ -14,7 +14,7 @@ import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
 import Prng.Uuid as Uuid exposing (Uuid)
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
-import Quote exposing (Quote, QuoteReq, postQuote, quotesView)
+import Quote exposing (Quote, QuoteReq, RelativeAmount(..), postQuote, quotesView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
@@ -108,7 +108,7 @@ addQuote : Model -> Status QuoteReq Quote -> Model
 addQuote model quote =
     case quote of
         Loaded q ->
-            { model | quotes = changeFirstMatchingLoadingToLoaded (\r -> r.sourceAmount == q.sourceAmount) q model.quotes }
+            { model | quotes = changeFirstMatchingLoadingToLoaded (\r -> r.amount == SourceAmount q.sourceAmount.value) q model.quotes }
 
         Failed req ->
             { model | quotes = changeFirstMatchingLoadingToFailed ((==) req) model.quotes }
@@ -350,8 +350,7 @@ update msg ({ quoteForm, transferForm } as model) =
                                     { profileId = profile.id
                                     , sourceCurrency = curr
                                     , targetCurrency = curr
-                                    , sourceAmount = Just a
-                                    , targetAmount = Nothing
+                                    , amount = SourceAmount a
                                     , preferredPayIn = Quote.Balance
                                     , targetAccount = Just acc
                                     }

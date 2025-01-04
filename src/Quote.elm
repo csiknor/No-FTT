@@ -1,12 +1,12 @@
-module Quote exposing (PaymentOption, Quote, QuoteReq, TransferMethod(..), postQuote, quotesView)
+module Quote exposing (PaymentOption, Quote, QuoteReq, RelativeAmount(..), TransferMethod(..), postQuote, quotesView)
 
 -- MODEL
 
 import Api exposing (Status(..), loadedValues, wiseApiPost, wrapError)
 import CSS.Attributes exposing (class)
-import CSS.Bootstrap exposing (alert, alertLight, alertLink, collapse, mb3)
-import Html exposing (Html, a, div, text)
-import Html.Attributes exposing (attribute, href, id, title)
+import CSS.Bootstrap exposing (alert, alertLight, alertLink, collapse, mb3, mt3, tableBordered, tableHover, tableStriped, textTruncate)
+import Html exposing (Html, a, div, li, table, tbody, td, text, th, thead, tr, ul)
+import Html.Attributes exposing (attribute, colspan, href, id, title)
 import Http
 import Json.Decode as D
 import Json.Encode as E
@@ -23,19 +23,21 @@ type alias QuoteReq =
     { profileId : Int
     , sourceCurrency : String
     , targetCurrency : String
-    , sourceAmount : Maybe Float
-    , targetAmount : Maybe Float
+    , amount : RelativeAmount
     , preferredPayIn : TransferMethod
     , targetAccount : Maybe Int
     }
 
 
+type RelativeAmount
+    = SourceAmount Float
+    | TargetAmount Float
+
+
 type alias Quote =
     { id : String
-    , sourceCurrency : String
-    , targetCurrency : String
-    , sourceAmount : Maybe Float
-    , targetAmount : Maybe Float
+    , sourceAmount : Amount
+    , targetAmount : Maybe Amount
     , preferredPayIn : String
     , paymentOptions : List PaymentOption
     , notices : List Notice
@@ -48,8 +50,15 @@ type alias PaymentOption =
     , formattedEstimatedDelivery : Maybe String
     , payIn : String
     , payOut : String
-    , feeAmount : Float
-    , priceTotalAmount : Float
+    , sourceAmount : Amount
+    , targetAmount : Amount
+    , priceTotalAmount : Amount
+    }
+
+
+type alias Amount =
+    { value : Float
+    , currency : String
     }
 
 
@@ -80,7 +89,7 @@ quotesView list =
             div [ classes [ alert, alertLight, mb3 ] ]
                 [ quoteSummaryView list
                 , a [ classes [ alertLink ], href "#quoteList", attribute "data-bs-toggle" "collapse" ] [ text "Details" ]
-                , div [ class collapse, id "quoteList" ] <| List.map quoteView list
+                , div [ classes [ collapse, mt3 ], id "quoteList" ] [ quoteDetailsView list ]
                 ]
 
 
@@ -95,14 +104,13 @@ quoteSummaryView list =
             [ String.fromInt <| List.length loaded
             , String.fromInt <| List.length list
             , loaded
-                |> List.map .sourceAmount
-                |> List.map (Maybe.withDefault 0)
+                |> List.map (.sourceAmount >> .value)
                 |> List.sum
                 |> String.fromFloat
             , loaded
                 |> List.map preferredActivePaymentOption
                 |> List.filterMap identity
-                |> List.map .priceTotalAmount
+                |> List.map (.priceTotalAmount >> .value)
                 |> List.sum
                 |> String.fromFloat
             ]
@@ -113,66 +121,94 @@ preferredActivePaymentOption quote =
     List.head <| List.filter (\p -> p.payIn == quote.preferredPayIn && p.disabled == False) quote.paymentOptions
 
 
+quoteDetailsView : List (Status QuoteReq Quote) -> Html msg
+quoteDetailsView list =
+    table [ classes [ CSS.Bootstrap.table, tableStriped, tableBordered, tableHover ] ]
+        [ thead []
+            [ tr []
+                [ th [] [ text "Id" ]
+                , th [] [ text "Sent" ]
+                , th [] [ text "Received" ]
+                , th [] [ text "Price" ]
+                , th [] [ text "Delivery" ]
+                , th [] [ text "Notices" ]
+                ]
+            ]
+        , tbody [] <| List.map quoteView list
+        ]
+
+
 quoteView : Status QuoteReq Quote -> Html msg
 quoteView status =
     case status of
         Loading r ->
-            div [] [ text <| interpolate "Loading quote {0} {1}..." [ stringFromMaybeFloatOrZero r.sourceAmount, r.sourceCurrency ] ]
+            tr [] [ td [ colspan 6 ] [ text <| interpolate "Loading quote {0} {1}..." [ stringFromRelativeAmount r.amount, r.sourceCurrency ] ] ]
 
         Failed r ->
-            div [] [ text <| interpolate "Failed to load quote {0} {1}" [ stringFromMaybeFloatOrZero r.sourceAmount, r.sourceCurrency ] ]
+            tr [] [ td [ colspan 6 ] [ text <| interpolate "Failed to load quote {0} {1}" [ stringFromRelativeAmount r.amount, r.sourceCurrency ] ] ]
 
         Loaded quote ->
-            div [] <|
-                [ div [] [ text ("Quote: " ++ quote.id) ]
-                , div [] [ text ("Source: " ++ quote.sourceCurrency ++ " " ++ stringFromMaybeFloatOrZero quote.sourceAmount) ]
-                , div [] [ text ("Target: " ++ quote.targetCurrency ++ " " ++ stringFromMaybeFloatOrZero quote.targetAmount) ]
-                , div [] [ text ("Pay in: " ++ quote.preferredPayIn) ]
-                ]
-                    ++ (paymentOptionView <| preferredActivePaymentOption quote)
-                    ++ noticesView quote.notices
+            tr [] <|
+                td [] [ div [ attribute "style" "width: 5rem;", class textTruncate ] [ text quote.id ] ]
+                    :: (paymentOptionView <| preferredActivePaymentOption quote)
+                    ++ [ noticesView quote.notices ]
 
         _ ->
             text ""
 
 
-stringFromMaybeFloatOrZero : Maybe Float -> String
-stringFromMaybeFloatOrZero =
-    Maybe.withDefault 0 >> String.fromFloat
+stringFromRelativeAmount : RelativeAmount -> String
+stringFromRelativeAmount a =
+    case a of
+        SourceAmount f ->
+            "Source " ++ String.fromFloat f
+
+        TargetAmount f ->
+            "Target " ++ String.fromFloat f
+
+
+stringFromAmount : Amount -> String
+stringFromAmount a =
+    String.fromFloat a.value ++ " " ++ a.currency
 
 
 paymentOptionView : Maybe PaymentOption -> List (Html msg)
 paymentOptionView value =
     case value of
         Just option ->
-            [ div [] [ text ("Pay out: " ++ option.payOut) ]
-            , div [] [ text ("Fee: " ++ String.fromFloat option.feeAmount) ]
-            , div [] [ text ("Price: " ++ String.fromFloat option.priceTotalAmount) ]
-            , case ( option.estimatedDelivery, option.formattedEstimatedDelivery ) of
-                ( Just est, Just form ) ->
-                    div [ title est ] [ text ("Estimated delivery: " ++ form) ]
-
-                _ ->
-                    div [] [ text "No estimated delivery" ]
+            [ td [] [ text <| stringFromAmount option.sourceAmount ]
+            , td [] [ text <| stringFromAmount option.targetAmount ]
+            , td [] [ text <| stringFromAmount option.priceTotalAmount ]
+            , estimatedDeliveryView option.estimatedDelivery option.formattedEstimatedDelivery
             ]
 
         _ ->
-            [ div [] [ text "No payment options" ] ]
+            [ td [ colspan 4 ] [ text "No payment options" ] ]
 
 
-noticesView : List Notice -> List (Html msg)
+estimatedDeliveryView : Maybe String -> Maybe String -> Html msg
+estimatedDeliveryView estimatedDelivery formattedEstimatedDelivery =
+    case ( estimatedDelivery, formattedEstimatedDelivery ) of
+        ( Just est, Just form ) ->
+            td [ title est ] [ text form ]
+
+        _ ->
+            td [] [ text "Unknown" ]
+
+
+noticesView : List Notice -> Html msg
 noticesView notices =
     case notices of
         [] ->
-            []
+            td [] [ text "" ]
 
         _ ->
-            List.map noticeView notices
+            td [] [ ul [] <| List.map noticeView notices ]
 
 
 noticeView : Notice -> Html msg
 noticeView notice =
-    div [] [ text ("Notice: " ++ noticeTypeView notice.type_ ++ " " ++ notice.text ++ " " ++ notice.link) ]
+    li [] [ text <| noticeTypeView notice.type_, text " ", a [ href notice.link ] [ text notice.text ] ]
 
 
 noticeTypeView : NoticeType -> String
@@ -213,11 +249,20 @@ quoteReqEncoder req =
         [ ( "profileId", E.int req.profileId )
         , ( "sourceCurrency", E.string req.sourceCurrency )
         , ( "targetCurrency", E.string req.targetCurrency )
-        , ( "sourceAmount", maybeOrNull E.float req.sourceAmount )
-        , ( "targetAmount", maybeOrNull E.float req.targetAmount )
+        , relativeAmountEncoder req.amount
         , ( "preferredPayIn", transferMethodEncoder req.preferredPayIn )
         , ( "targetAccount", maybeOrNull E.int req.targetAccount )
         ]
+
+
+relativeAmountEncoder : RelativeAmount -> ( String, E.Value )
+relativeAmountEncoder amount =
+    case amount of
+        SourceAmount f ->
+            ( "sourceAmount", E.float f )
+
+        TargetAmount f ->
+            ( "targetAmount", E.float f )
 
 
 transferMethodEncoder : TransferMethod -> E.Value
@@ -239,12 +284,10 @@ maybeOrNull encoder value =
 
 quoteDecoder : D.Decoder Quote
 quoteDecoder =
-    D.map8 Quote
+    D.map6 Quote
         (D.field "id" D.string)
-        (D.field "sourceCurrency" D.string)
-        (D.field "targetCurrency" D.string)
-        (D.maybe (D.field "sourceAmount" D.float))
-        (D.maybe (D.field "targetAmount" D.float))
+        (amountDecoder "sourceAmount" "sourceCurrency")
+        (D.maybe (amountDecoder "targetAmount" "targetCurrency"))
         (D.field "preferredPayIn" D.string)
         (D.field "paymentOptions" (D.list paymentOptionDecoder))
         (D.field "notices" (D.list noticeDecoder))
@@ -252,14 +295,22 @@ quoteDecoder =
 
 paymentOptionDecoder : D.Decoder PaymentOption
 paymentOptionDecoder =
-    D.map7 PaymentOption
+    D.map8 PaymentOption
         (D.field "disabled" D.bool)
-        (D.field "estimatedDelivery" (D.maybe D.string))
-        (D.field "formattedEstimatedDelivery" (D.maybe D.string))
+        (D.maybe <| D.field "estimatedDelivery" D.string)
+        (D.maybe <| D.field "formattedEstimatedDelivery" D.string)
         (D.field "payIn" D.string)
         (D.field "payOut" D.string)
-        (D.at [ "fee", "total" ] D.float)
-        (D.at [ "price", "total", "value", "amount" ] D.float)
+        (amountDecoder "sourceAmount" "sourceCurrency")
+        (amountDecoder "targetAmount" "targetCurrency")
+        (D.at [ "price", "total", "value" ] <| amountDecoder "amount" "currency")
+
+
+amountDecoder : String -> String -> D.Decoder Amount
+amountDecoder value currency =
+    D.map2 Amount
+        (D.field value D.float)
+        (D.field currency D.string)
 
 
 noticeDecoder : D.Decoder Notice
