@@ -496,10 +496,10 @@ update msg ({ quoteForm, transferForm } as model) =
                         )
                         model.fundings
 
-        ( GotFunding response, _, _ ) ->
+        ( GotFunding response, Connected key, Loaded profile ) ->
             case response of
                 Ok funding ->
-                    ( addFunding model <| Loaded funding, Cmd.none )
+                    ( addFunding model <| Loaded funding, getBalances key GotBalances profile )
 
                 Err ( e, transferId ) ->
                     ( addError "Funding" e <| addFunding model <| Failed transferId, Cmd.none )
