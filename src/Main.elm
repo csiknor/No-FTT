@@ -46,6 +46,7 @@ type alias QuoteForm =
 
 type alias TransferForm =
     { reference : String
+    , action : Maybe String
     }
 
 
@@ -75,7 +76,7 @@ init ( seed, seedExtension ) =
       , quoteForm = QuoteForm Nothing Nothing 100 100
       , quotes = []
       , recipients = NotLoaded
-      , transferForm = TransferForm ""
+      , transferForm = TransferForm "" Nothing
       , transfers = []
       , fundings = []
       , pending = NotLoaded
@@ -176,7 +177,7 @@ resetQuotes model =
     { model
         | quoteForm = QuoteForm Nothing Nothing 100 100
         , quotes = []
-        , transferForm = TransferForm ""
+        , transferForm = TransferForm "" Nothing
         , transfers = []
         , fundings = []
     }
@@ -415,7 +416,11 @@ update msg ({ quoteForm, transferForm } as model) =
                                     )
                                     quoteAndTransactionIds
                         in
-                        ( { model | transfers = List.map (\r -> Loading <| CreateTransferReq r) reqs, seed = newSeed }
+                        ( { model
+                            | transferForm = { transferForm | action = Just "Created" }
+                            , transfers = List.map (\r -> Loading <| CreateTransferReq r) reqs
+                            , seed = newSeed
+                          }
                         , Cmd.batch <| List.map (\r -> postTransfer key r GotTransfer) reqs
                         )
 
@@ -427,7 +432,7 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( ResubmitFailedTransfer, Connected key, _ ) ->
             Tuple.mapBoth
-                (\transfers -> { model | transfers = transfers })
+                (\transfers -> { model | transferForm = { transferForm | action = Just "Resubmitted" }, transfers = transfers })
                 (\cmds -> Cmd.batch cmds)
             <|
                 List.unzip <|
@@ -455,7 +460,10 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( CancelTransfer, Connected key, _ ) ->
             if allLoaded model.transfers then
-                ( { model | transfers = List.map (\t -> Loading <| CancelTransferReq t.id) <| loadedValues model.transfers }
+                ( { model
+                    | transferForm = { transferForm | action = Just "Cancelled" }
+                    , transfers = List.map (\t -> Loading <| CancelTransferReq t.id) <| loadedValues model.transfers
+                  }
                 , cancelTransfers key <| loadedValues model.transfers
                 )
 
@@ -601,7 +609,7 @@ view model =
         , quoteFormView model
         , quotesView model.quotes
         , transferFormView model
-        , transfersView model.transfers
+        , transfersView model.transferForm.action model.transfers
         , fundingFormView model
         , fundingsView model.fundings
         ]

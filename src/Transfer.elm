@@ -1,12 +1,16 @@
 module Transfer exposing (AnyTransferReq(..), Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
 
-import Api exposing (Status(..), wiseApiGet, wiseApiPost, wiseApiPut, wrapError)
-import Html exposing (Html, button, div, text)
+import Api exposing (Status(..), loadedValues, wiseApiGet, wiseApiPost, wiseApiPut, wrapError)
+import CSS.Bootstrap exposing (alert, alertLight, alertLink, collapse, mb3, mt3, tableBordered, tableHover, tableStriped)
+import Html exposing (Html, a, button, div, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (attribute, colspan, href, id)
 import Html.Events exposing (onClick)
 import Http
 import Json.Decode as D
 import Json.Encode as E
+import String.Interpolate exposing (interpolate)
 import Url.Builder as B
+import Utils exposing (classes)
 
 
 
@@ -55,40 +59,72 @@ type FundingStatus
 -- VIEW
 
 
-transfersView : List (Status AnyTransferReq Transfer) -> Html msg
-transfersView list =
-    case list of
-        [] ->
+transfersView : Maybe String -> List (Status AnyTransferReq Transfer) -> Html msg
+transfersView maybeAction list =
+    case ( maybeAction, list ) of
+        ( _, [] ) ->
             text ""
 
+        ( Just action, _ ) ->
+            div [ classes [ alert, alertLight, mb3 ] ]
+                [ transferSummaryView action list
+                , a [ classes [ alertLink ], href "#transferList", attribute "data-bs-toggle" "collapse" ] [ text "Details" ]
+                , div [ classes [ collapse, mt3 ], id "transferList" ] [ transferDetailsView list ]
+                ]
+
         _ ->
-            div [] <| List.map transferView list
+            text ""
+
+
+transferSummaryView : String -> List (Status AnyTransferReq Transfer) -> Html msg
+transferSummaryView action list =
+    text <|
+        interpolate "{0} {1}/{2} transfers. "
+            [ action
+            , String.fromInt <| List.length <| loadedValues list
+            , String.fromInt <| List.length list
+            ]
+
+
+transferDetailsView : List (Status AnyTransferReq Transfer) -> Html msg
+transferDetailsView list =
+    table [ classes [ CSS.Bootstrap.table, tableStriped, tableBordered, tableHover ] ]
+        [ thead []
+            [ tr []
+                [ th [] [ text "Id" ]
+                , th [] [ text "Status" ]
+                , th [] [ text "Active Issues" ]
+                ]
+            ]
+        , tbody [] <| List.map transferView list
+        ]
 
 
 transferView : Status AnyTransferReq Transfer -> Html msg
 transferView status =
     case status of
         Loading _ ->
-            div [] [ text "Loading transfer..." ]
+            tr [] [ td [ colspan 3 ] [ text "Loading transfer..." ] ]
 
         Loaded transfer ->
             loadedTransferView transfer
 
         Failed (CreateTransferReq req) ->
-            div [] [ text <| "Failed to create transfer for quote " ++ req.quoteUuid ]
+            tr [] [ td [ colspan 3 ] [ text <| "Failed to create transfer for quote " ++ req.quoteUuid ] ]
 
         Failed (CancelTransferReq transferId) ->
-            div [] [ text <| "Failed to cancel transfer " ++ String.fromInt transferId ]
+            tr [] [ td [ colspan 3 ] [ text <| "Failed to cancel transfer " ++ String.fromInt transferId ] ]
 
         _ ->
-            text ""
+            tr [] [ td [ colspan 3 ] [ text "" ] ]
 
 
 loadedTransferView : Transfer -> Html msg
 loadedTransferView transfer =
-    div []
-        [ div [] [ text <| "Transfer: " ++ String.fromInt transfer.id ++ " (" ++ transfer.status ++ ")" ]
-        , div []
+    tr []
+        [ td [] [ text <| String.fromInt transfer.id ]
+        , td [] [ text <| transfer.status ]
+        , td []
             [ case transfer.hasActiveIssues of
                 True ->
                     text "Transfer has active issues"
