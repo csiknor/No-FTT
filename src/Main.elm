@@ -5,7 +5,7 @@ import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import CSS exposing (className)
 import CSS.Attributes exposing (class)
-import CSS.Bootstrap exposing (active, alignItemsCenter, btn, btnPrimary, btnSecondary, collapse, container, containerFluid, formControl, g3, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon, row, rowColsMdAuto, visuallyHidden)
+import CSS.Bootstrap exposing (active, alignItemsCenter, btn, btnDanger, btnPrimary, btnSecondary, collapse, container, containerFluid, formControl, formLabel, g3, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon, row, rowColsMdAuto, visuallyHidden)
 import Error exposing (errorsView)
 import Html exposing (Html, a, button, div, form, input, label, li, nav, span, text, ul)
 import Html.Attributes as A exposing (attribute, for, href, id, placeholder, type_, value)
@@ -62,6 +62,7 @@ type alias Model =
     , transferForm : TransferForm
     , transfers : List (Status AnyTransferReq Transfer)
     , fundings : List (Status Int Funding)
+    , confirmFunding : Bool
     , pending : Status () (List (Status Int Transfer))
     }
 
@@ -79,6 +80,7 @@ init ( seed, seedExtension ) =
       , transferForm = TransferForm "" Nothing
       , transfers = []
       , fundings = []
+      , confirmFunding = False
       , pending = NotLoaded
       }
     , Cmd.none
@@ -180,6 +182,7 @@ resetQuotes model =
         , transferForm = TransferForm "" Nothing
         , transfers = []
         , fundings = []
+        , confirmFunding = False
     }
 
 
@@ -240,6 +243,7 @@ type Msg
     | GotTransfer (Result ( Http.Error, AnyTransferReq ) Transfer)
     | CancelTransfer
     | SubmitFunding
+    | DoSubmitFunding
     | ResubmitFailedFunding
     | GotFunding (Result ( Http.Error, Int ) Funding)
     | GotPending (Result Http.Error (List Transfer))
@@ -470,7 +474,10 @@ update msg ({ quoteForm, transferForm } as model) =
             else
                 ( withError model "Invalid Transfers", Cmd.none )
 
-        ( SubmitFunding, Connected key, Loaded profile ) ->
+        ( SubmitFunding, _, _ ) ->
+            ( { model | confirmFunding = True }, Cmd.none )
+
+        ( DoSubmitFunding, Connected key, Loaded profile ) ->
             if allLoaded model.transfers then
                 ( { model | fundings = List.map (\t -> Loading t.id) <| loadedValues model.transfers }
                 , submitFundings key profile.id <| loadedValues model.transfers
@@ -717,10 +724,18 @@ fundingFormView model =
     case model.fundings of
         [] ->
             if allLoaded model.transfers && List.all (\t -> t.status == "incoming_payment_waiting") (loadedValues model.transfers) then
-                form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter, mb3 ], onSubmit SubmitFunding ] <|
-                    [ div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Fund" ] ]
-                    , div [] [ button [ classes [ btn, btnSecondary ], type_ "button", onClick CancelTransfer ] [ text "Cancel" ] ]
-                    ]
+                if not model.confirmFunding then
+                    form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter, mb3 ], onSubmit SubmitFunding ] <|
+                        [ div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Fund" ] ]
+                        , div [] [ button [ classes [ btn, btnSecondary ], type_ "button", onClick CancelTransfer ] [ text "Cancel" ] ]
+                        ]
+
+                else
+                    form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter, mb3 ], onSubmit DoSubmitFunding ] <|
+                        [ div [] [ label [ class formLabel ] [ text "Are you sure?" ] ]
+                        , div [] [ button [ classes [ btn, btnDanger ], type_ "submit" ] [ text "Confirm" ] ]
+                        , div [] [ button [ classes [ btn, btnSecondary ], type_ "button", onClick CancelTransfer ] [ text "Cancel" ] ]
+                        ]
 
             else if
                 List.any
