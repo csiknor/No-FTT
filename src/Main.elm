@@ -5,7 +5,7 @@ import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import CSS exposing (className)
 import CSS.Attributes exposing (class)
-import CSS.Bootstrap exposing (active, alignItemsCenter, btn, btnPrimary, collapse, container, containerFluid, formControl, g3, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon, row, rowColsMdAuto, visuallyHidden)
+import CSS.Bootstrap exposing (active, alignItemsCenter, btn, btnPrimary, btnSecondary, collapse, container, containerFluid, formControl, g3, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon, row, rowColsMdAuto, visuallyHidden)
 import Error exposing (errorsView)
 import Html exposing (Html, a, button, div, form, input, label, li, nav, span, text, ul)
 import Html.Attributes as A exposing (attribute, for, href, id, placeholder, type_, value)
@@ -717,9 +717,9 @@ fundingFormView model =
     case model.fundings of
         [] ->
             if allLoaded model.transfers && List.all (\t -> t.status == "incoming_payment_waiting") (loadedValues model.transfers) then
-                form [ onSubmit SubmitFunding ] <|
-                    [ input [ type_ "submit", value "Fund" ] []
-                    , button [ type_ "button", onClick CancelTransfer ] [ text "Cancel" ]
+                form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter, mb3 ], onSubmit SubmitFunding ] <|
+                    [ div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Fund" ] ]
+                    , div [] [ button [ classes [ btn, btnSecondary ], type_ "button", onClick CancelTransfer ] [ text "Cancel" ] ]
                     ]
 
             else if
