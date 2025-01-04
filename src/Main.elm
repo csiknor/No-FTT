@@ -5,7 +5,7 @@ import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import CSS exposing (className)
 import CSS.Attributes exposing (class)
-import CSS.Bootstrap exposing (active, alignItemsCenter, btn, btnPrimary, collapse, container, containerFluid, formControl, g3, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon, row, rowColsLgAuto, visuallyHidden)
+import CSS.Bootstrap exposing (active, alignItemsCenter, btn, btnPrimary, collapse, container, containerFluid, formControl, g3, h1, mb0, mb2, mb3, mbSm0, meAuto, navItem, navLink, navbar, navbarBrand, navbarCollapse, navbarExpandSm, navbarNav, navbarText, navbarToggler, navbarTogglerIcon, row, rowColsMdAuto, visuallyHidden)
 import Error exposing (errorsView)
 import Html exposing (Html, a, button, div, form, input, label, li, nav, span, text, ul)
 import Html.Attributes as A exposing (attribute, for, href, id, placeholder, type_, value)
@@ -645,7 +645,7 @@ splitAndQuoteFormView : QuoteForm -> Html Msg
 splitAndQuoteFormView quoteForm =
     case quoteForm.account of
         Just _ ->
-            form [ classes [ row, rowColsLgAuto, g3, alignItemsCenter ], onSubmit SubmitQuote ]
+            form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter ], onSubmit SubmitQuote ]
                 [ div []
                     [ label [ class visuallyHidden, for "amount-input" ] [ text "Amount" ]
                     , input [ class formControl, id "amount-input", type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat quoteForm.amount), onInput ChangeAmount ] []

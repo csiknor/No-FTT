@@ -15,7 +15,7 @@ module Api exposing
     )
 
 import CSS.Attributes exposing (class)
-import CSS.Bootstrap exposing (alignItemsCenter, btn, btnPrimary, formControl, g3, row, rowColsLgAuto, visuallyHidden)
+import CSS.Bootstrap exposing (alignItemsCenter, btn, btnPrimary, formControl, g3, row, rowColsMdAuto, visuallyHidden)
 import Html exposing (Html, button, div, form, input, label, text)
 import Html.Attributes exposing (autocomplete, for, id, name, placeholder, required, type_, value)
 import Html.Events exposing (onInput, onSubmit)
@@ -142,7 +142,7 @@ apiKeyView : ApiState -> (String -> msg) -> msg -> Html msg
 apiKeyView state change submit =
     case state of
         NotConnected maybeKey ->
-            form [ classes [ row, rowColsLgAuto, g3, alignItemsCenter ], onSubmit submit ]
+            form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter ], onSubmit submit ]
                 [ div []
                     [ label [ class visuallyHidden, for "username-input" ] [ text "Username" ]
                     , input [ class formControl, id "username-input", name "username", type_ "text", placeholder "Enter your username", required True, autocomplete True ] []
