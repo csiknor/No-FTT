@@ -674,9 +674,12 @@ transferFormView model =
     if allLoaded model.quotes then
         case model.transfers of
             [] ->
-                form [ onSubmit SubmitTransfer ] <|
-                    [ input [ type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
-                    , input [ type_ "submit", value "Transfer" ] []
+                form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter, mb3 ], onSubmit SubmitTransfer ] <|
+                    [ div []
+                        [ label [ class visuallyHidden, for "reference-input" ] [ text "Reference" ]
+                        , input [ class formControl, id "reference-input", type_ "text", placeholder "Reference", value model.transferForm.reference, onInput ChangeReference ] []
+                        ]
+                    , div [] [ button [ classes [ btn, btnPrimary ], type_ "submit" ] [ text "Transfer" ] ]
                     ]
 
             _ ->
