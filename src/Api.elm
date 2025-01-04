@@ -20,6 +20,7 @@ import Html exposing (Html, button, div, form, input, label, text)
 import Html.Attributes exposing (autocomplete, for, id, name, placeholder, required, type_, value)
 import Html.Events exposing (onInput, onSubmit)
 import Http exposing (Error(..), Expect, emptyBody, header)
+import Url.Builder as B
 import Utils exposing (classes)
 
 
@@ -164,7 +165,7 @@ apiKeyView state change submit =
 
 wiseUrl : String
 wiseUrl =
-    "http://localhost:3000/api"
+    B.absolute [ "api" ] []
 
 
 wiseApiGet :
