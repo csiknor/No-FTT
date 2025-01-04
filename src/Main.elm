@@ -645,7 +645,7 @@ splitAndQuoteFormView : QuoteForm -> Html Msg
 splitAndQuoteFormView quoteForm =
     case quoteForm.account of
         Just _ ->
-            form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter ], onSubmit SubmitQuote ]
+            form [ classes [ row, rowColsMdAuto, g3, alignItemsCenter, mb3 ], onSubmit SubmitQuote ]
                 [ div []
                     [ label [ class visuallyHidden, for "amount-input" ] [ text "Amount" ]
                     , input [ class formControl, id "amount-input", type_ "number", placeholder "Amount", A.min "1", value (String.fromFloat quoteForm.amount), onInput ChangeAmount ] []

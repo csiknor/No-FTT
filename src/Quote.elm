@@ -2,14 +2,17 @@ module Quote exposing (PaymentOption, Quote, QuoteReq, TransferMethod(..), postQ
 
 -- MODEL
 
-import Api exposing (Status(..), wiseApiPost, wrapError)
-import Html exposing (Html, div, text)
-import Html.Attributes exposing (title)
+import Api exposing (Status(..), loadedValues, wiseApiPost, wrapError)
+import CSS.Attributes exposing (class)
+import CSS.Bootstrap exposing (alert, alertLight, alertLink, collapse, mb3)
+import Html exposing (Html, a, div, text)
+import Html.Attributes exposing (attribute, href, id, title)
 import Http
 import Json.Decode as D
 import Json.Encode as E
 import String.Interpolate exposing (interpolate)
 import Url.Builder as B
+import Utils exposing (classes)
 
 
 type TransferMethod
@@ -74,7 +77,40 @@ quotesView list =
             text ""
 
         _ ->
-            div [] <| List.map quoteView list
+            div [ classes [ alert, alertLight, mb3 ] ]
+                [ quoteSummaryView list
+                , a [ classes [ alertLink ], href "#quoteList", attribute "data-bs-toggle" "collapse" ] [ text "Details" ]
+                , div [ class collapse, id "quoteList" ] <| List.map quoteView list
+                ]
+
+
+quoteSummaryView : List (Status QuoteReq Quote) -> Html msg
+quoteSummaryView list =
+    let
+        loaded =
+            loadedValues list
+    in
+    text <|
+        interpolate "Created {0}/{1} quotes of sum amount {2} and total price {3}. "
+            [ String.fromInt <| List.length loaded
+            , String.fromInt <| List.length list
+            , loaded
+                |> List.map .sourceAmount
+                |> List.map (Maybe.withDefault 0)
+                |> List.sum
+                |> String.fromFloat
+            , loaded
+                |> List.map preferredActivePaymentOption
+                |> List.filterMap identity
+                |> List.map .priceTotalAmount
+                |> List.sum
+                |> String.fromFloat
+            ]
+
+
+preferredActivePaymentOption : Quote -> Maybe PaymentOption
+preferredActivePaymentOption quote =
+    List.head <| List.filter (\p -> p.payIn == quote.preferredPayIn && p.disabled == False) quote.paymentOptions
 
 
 quoteView : Status QuoteReq Quote -> Html msg
@@ -93,7 +129,7 @@ quoteView status =
                 , div [] [ text ("Target: " ++ quote.targetCurrency ++ " " ++ stringFromMaybeFloatOrZero quote.targetAmount) ]
                 , div [] [ text ("Pay in: " ++ quote.preferredPayIn) ]
                 ]
-                    ++ (paymentOptionView <| List.head <| List.filter (\p -> p.payIn == quote.preferredPayIn && p.disabled == False) quote.paymentOptions)
+                    ++ (paymentOptionView <| preferredActivePaymentOption quote)
                     ++ noticesView quote.notices
 
         _ ->
