@@ -180,23 +180,57 @@ fundingsView list =
             text ""
 
         _ ->
-            div [] <| List.map fundingView list
+            div [ classes [ alert, alertLight, mb3 ] ]
+                [ fundingSummaryView list
+                , a [ classes [ alertLink ], href "#fundingList", attribute "data-bs-toggle" "collapse" ] [ text "Details" ]
+                , div [ classes [ collapse, mt3 ], id "fundingList" ] [ fundingDetailsView list ]
+                ]
+
+
+fundingSummaryView : List (Status Int Funding) -> Html msg
+fundingSummaryView list =
+    let
+        loaded =
+            loadedValues list
+    in
+    text <|
+        interpolate "Funded {0}/{1} transfers. "
+            [ String.fromInt <| List.length loaded
+            , String.fromInt <| List.length list
+            ]
+
+
+fundingDetailsView : List (Status Int Funding) -> Html msg
+fundingDetailsView list =
+    table [ classes [ CSS.Bootstrap.table, tableStriped, tableBordered, tableHover ] ]
+        [ thead []
+            [ tr []
+                [ th [] [ text "Transfer Id" ]
+                , th [] [ text "Type" ]
+                , th [] [ text "Status" ]
+                , th [] [ text "Error Code" ]
+                ]
+            ]
+        , tbody [] <| List.map fundingView list
+        ]
 
 
 fundingView : Status Int Funding -> Html msg
 fundingView fundingStatus =
     case fundingStatus of
         Loading _ ->
-            div [] [ text "Loading funding..." ]
+            tr [] [ td [ colspan 4 ] [ text "Loading funding..." ] ]
 
         Loaded funding ->
-            div []
-                [ div [] [ text <| "Funding: " ++ funding.type_ ++ " (" ++ fundingStatusView funding.status ++ ")" ]
-                , fundingErrorCodeView funding.errorCode
+            tr []
+                [ td [] [ text <| String.fromInt funding.transferId ]
+                , td [] [ text <| funding.type_ ]
+                , td [] [ text <| fundingStatusView funding.status ]
+                , td [] [ text <| Maybe.withDefault "" funding.errorCode ]
                 ]
 
         Failed transferId ->
-            div [] [ text <| "Failed to fund transfer " ++ String.fromInt transferId ]
+            tr [] [ td [ colspan 4 ] [ text <| "Failed to fund transfer " ++ String.fromInt transferId ] ]
 
         _ ->
             text ""
@@ -210,16 +244,6 @@ fundingStatusView status =
 
         Rejected ->
             "Rejected"
-
-
-fundingErrorCodeView : Maybe String -> Html msg
-fundingErrorCodeView code =
-    case code of
-        Just val ->
-            div [] [ text <| "Error: " ++ val ]
-
-        Nothing ->
-            text ""
 
 
 
