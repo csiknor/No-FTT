@@ -249,6 +249,7 @@ type Msg
     | GotPending (Result Http.Error (List Transfer))
     | CancelPending
     | GotPendingCancel (Result ( Http.Error, AnyTransferReq ) Transfer)
+    | ClearPending
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -290,6 +291,9 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( GotPending response, _, _ ) ->
             handleResultAndStop "Pending" response (withPending model)
+
+        ( ClearPending, _, _ ) ->
+            ( { model | pending = NotLoaded }, Cmd.none )
 
         ( CancelPending, Connected key, _ ) ->
             case model.pending of
@@ -612,7 +616,7 @@ view model =
         [ headerView <| profileView model.profile
         , errorsView model.errors ClearErrors
         , apiKeyView model.state ChangeApiKey SubmitApiKey
-        , pendingTransfersView model.pending CancelPending
+        , pendingTransfersView model.pending CancelPending ClearPending
         , quoteFormView model
         , quotesView model.quotes
         , transferFormView model

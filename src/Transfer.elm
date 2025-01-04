@@ -1,9 +1,10 @@
 module Transfer exposing (AnyTransferReq(..), Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
 
 import Api exposing (Status(..), loadedValues, wiseApiGet, wiseApiPost, wiseApiPut, wrapError)
-import CSS.Bootstrap exposing (alert, alertLight, alertLink, collapse, mb3, mt3, tableBordered, tableHover, tableStriped)
-import Html exposing (Html, a, button, div, table, tbody, td, text, th, thead, tr)
-import Html.Attributes exposing (attribute, colspan, href, id)
+import CSS.Attributes exposing (class)
+import CSS.Bootstrap exposing (alert, alertDismissible, alertLight, alertLink, alertWarning, btn, btnClose, btnWarning, collapse, fade, mb3, mt3, show, spinnerBorder, tableBordered, tableHover, tableStriped, tableWarning, visuallyHidden)
+import Html exposing (Html, a, button, div, h5, span, table, tbody, td, text, th, thead, tr)
+import Html.Attributes exposing (attribute, colspan, href, id, type_)
 import Html.Events exposing (onClick)
 import Http
 import Json.Decode as D
@@ -135,39 +136,52 @@ loadedTransferView transfer =
         ]
 
 
-pendingTransfersView : Status () (List (Status Int Transfer)) -> msg -> Html msg
-pendingTransfersView pending msg =
+pendingTransfersView : Status () (List (Status Int Transfer)) -> msg -> msg -> Html msg
+pendingTransfersView pending cancel clear =
     case pending of
         Loading _ ->
-            div [] [ text "Loading pending transfers..." ]
+            div [ class spinnerBorder ] [ span [ class visuallyHidden ] [ text "Loading pending transfers..." ] ]
 
         Loaded [] ->
             text ""
 
         Loaded transfers ->
-            div [] <|
-                [ text <| "Pending transfers: " ++ String.fromInt (List.length transfers) ]
-                    ++ List.map pendingTransferView transfers
-                    ++ [ button [ onClick msg ] [ text "Cancel Pending" ] ]
-
-        Failed _ ->
-            text "Failed to load pending transfers"
+            div [ classes [ alert, alertWarning, alertDismissible, fade, show ] ] <|
+                [ h5 [] [ text "You have pending transfers!" ]
+                , pendingTransferDetailsView transfers
+                , button [ classes [ btn, btnWarning ], onClick cancel ] [ text "Cancel Pending" ]
+                , button [ type_ "button", classes [ btnClose ], attribute "data-bs-dismiss" "alert", onClick clear ] []
+                ]
 
         _ ->
             text ""
+
+
+pendingTransferDetailsView : List (Status Int Transfer) -> Html msg
+pendingTransferDetailsView list =
+    table [ classes [ CSS.Bootstrap.table, tableStriped, tableBordered, tableHover, tableWarning ] ]
+        [ thead []
+            [ tr []
+                [ th [] [ text "Id" ]
+                , th [] [ text "Status" ]
+                , th [] [ text "Active Issues" ]
+                ]
+            ]
+        , tbody [] <| List.map pendingTransferView list
+        ]
 
 
 pendingTransferView : Status Int Transfer -> Html msg
 pendingTransferView status =
     case status of
         Loading _ ->
-            div [] [ text "Cancelling pending transfer..." ]
+            tr [] [ td [ colspan 3 ] [ text "Cancelling pending transfer..." ] ]
 
         Loaded transfer ->
             loadedTransferView transfer
 
         Failed _ ->
-            text "Failed to cancel pending transfer"
+            tr [] [ td [ colspan 3 ] [ text "Failed to cancel pending transfer" ] ]
 
         _ ->
             text ""
