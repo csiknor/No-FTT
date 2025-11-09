@@ -45,10 +45,10 @@ The application is written in [Elm](https://elm-lang.org/) and located in the `s
     ```bash
     elm make src/Main.elm --optimize --output=elm.js
     ```
-3. Install Node and NPM using the [official guide](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm)
-4. Install the dependencies
+3. Install Node and pnpm using the [official guide](https://pnpm.io/installation)
+4. Install the dependencies in the proxy-server directory
     ```bash
-    npm install
+    cd proxy-server && pnpm install
     ```
 5. Start the Express proxy server
     ```bash
@@ -60,10 +60,10 @@ The application is written in [Elm](https://elm-lang.org/) and located in the `s
     ```
 7. Visit the application in your browser at http://localhost:8000/index.html
 
-> **Note:** The Elm Reactor and the Express proxy server listen on different ports. Therefore you need to modify the API URL in the [`src/Api.elm`](src/Api.elm) file to `http://localhost:3000`.
+> **Note:** The Elm Reactor and the Express proxy server listen on different ports. Therefore, you need to modify the API URL in the [`src/Api.elm`](src/Api.elm) file to `http://localhost:3000`.
 > ```elm
 > wiseUrl =
->     B.crossOrigin "https://localhost:3000" [ "api" ] []
+>     B.crossOrigin "http://localhost:3000" [ "api" ] []
 > ```
 
 ### Deployment
@@ -86,4 +86,3 @@ The application is deployed as a Docker container. The [`Dockerfile`](Dockerfile
 
 ## License
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-```
