@@ -48,33 +48,17 @@ The application is written in [Elm](https://elm-lang.org/) and located in the `s
 3. Install Node and pnpm using the [official guide](https://pnpm.io/installation)
 4. Install the dependencies in the proxy-server directory
     ```bash
-    cd proxy-server && pnpm install
+    pnpm install -C proxy-server
     ```
-5. Start the Express proxy server
+5. Start the Express proxy server (serves both the Elm app and proxies API requests)
     ```bash
     node proxy-server/server.js
     ```
-6. Run the Elm Reactor
-    ```bash
-    elm reactor
-    ```
-7. Visit the application in your browser at http://localhost:8000/index.html
-
-> **Note:** The Elm Reactor and the Express proxy server listen on different ports. Therefore, you need to modify the API URL in the [`src/Api.elm`](src/Api.elm) file to `http://localhost:3000`.
-> ```elm
-> wiseUrl =
->     B.crossOrigin "http://localhost:3000" [ "api" ] []
-> ```
+6. Visit the application in your browser at http://localhost:3000
 
 ### Deployment
 
 The application is deployed as a Docker container. The [`Dockerfile`](Dockerfile) builds the Elm application and serves it using an Nginx server which also proxies the Wise API requests.
-
-> **Note:** The API URL in the [`src/Api.elm`](src/Api.elm) file is set to `/api` to match the [Nginx configuration](nginx.conf).
-> ```elm
-> wiseUrl =
->     B.absolute [ "api" ] []
-> ```
 
 1. Build and run the docker image
     ```bash 

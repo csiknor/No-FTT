@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 
 const app = express();
@@ -44,7 +45,17 @@ app.use('/api', createProxyMiddleware({
   }
 }));
 
+// Serve static files from the parent directory (elm.js, index.html)
+const staticPath = path.join(__dirname, '..');
+app.use(express.static(staticPath));
+
+// Fallback to index.html for client-side routing (SPA support)
+app.get('*', (req, res) => {
+  res.sendFile(path.join(staticPath, 'index.html'));
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Proxy server is running on port ${PORT}`);
+  console.log(`Serving Elm application from ${staticPath}`);
 });
