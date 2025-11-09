@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1
 # Use a base image with Elm compiler for the build stage
 FROM node:alpine AS build
 
