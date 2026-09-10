@@ -21,6 +21,7 @@ import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import String.Interpolate exposing (interpolate)
 import Task
+import Time
 import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
 import Utils exposing (classes)
 
@@ -66,6 +67,7 @@ type alias Model =
     , fundings : List (Status Int Funding)
     , confirmFunding : Bool
     , pending : Status () (List (Status Int Transfer))
+    , nextBatchRequestAt : Int
     }
 
 
@@ -84,6 +86,7 @@ init ( seed, seedExtension ) =
       , fundings = []
       , confirmFunding = False
       , pending = NotLoaded
+      , nextBatchRequestAt = 0
       }
     , Cmd.none
     )
@@ -256,11 +259,19 @@ type Msg
     | SendPendingCancel Int Int
     | GotPendingCancel Int (Result ( Http.Error, AnyTransferReq ) Transfer)
     | ClearPending
+    | QueueBatchRequests (List Msg)
+    | ScheduleBatchRequests Time.Posix (List Msg)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ quoteForm, transferForm } as model) =
     case ( msg, model.state, model.profile ) of
+        ( QueueBatchRequests messages, _, _ ) ->
+            ( model, scheduleBatchRequests messages )
+
+        ( ScheduleBatchRequests now messages, _, _ ) ->
+            scheduleBatchRequestsAt now messages model
+
         ( ChangeApiKey key, _, _ ) ->
             ( resetQuotes
                 { model
@@ -646,7 +657,7 @@ generateAndPairUuids start list =
         list
 
 
-batchDelayMs : Float
+batchDelayMs : Int
 batchDelayMs =
     500
 
@@ -658,9 +669,40 @@ maxRateLimitRetries =
 
 pacedMessages : (a -> Msg) -> List a -> Cmd Msg
 pacedMessages toMsg items =
-    items
-        |> List.indexedMap (\index item -> delayedMessage (toFloat index * batchDelayMs) <| toMsg item)
-        |> Cmd.batch
+    scheduleBatchRequests <| List.map toMsg items
+
+
+scheduleBatchRequests : List Msg -> Cmd Msg
+scheduleBatchRequests messages =
+    if List.isEmpty messages then
+        Cmd.none
+
+    else
+        Task.perform (\now -> ScheduleBatchRequests now messages) Time.now
+
+
+scheduleBatchRequestsAt : Time.Posix -> List Msg -> Model -> ( Model, Cmd Msg )
+scheduleBatchRequestsAt now messages model =
+    let
+        nowMillis =
+            Time.posixToMillis now
+
+        firstRequestAt =
+            max nowMillis model.nextBatchRequestAt
+
+        commands =
+            messages
+                |> List.indexedMap
+                    (\index message ->
+                        delayedMessage
+                            (toFloat <| firstRequestAt + index * batchDelayMs - nowMillis)
+                            message
+                    )
+
+        nextRequestAt =
+            firstRequestAt + List.length messages * batchDelayMs
+    in
+    ( { model | nextBatchRequestAt = nextRequestAt }, Cmd.batch commands )
 
 
 delayedMessage : Float -> Msg -> Cmd Msg
@@ -672,7 +714,13 @@ delayedMessage delay message =
 retryRateLimit : Int -> Http.Error -> Msg -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
 retryRateLimit attempt error retryMsg retryResult failureResult =
     if isRateLimit error && attempt < maxRateLimitRetries then
-        Tuple.mapSecond (\_ -> delayedMessage (toFloat <| 1000 * (2 ^ attempt)) retryMsg) retryResult
+        Tuple.mapSecond
+            (\_ ->
+                delayedMessage
+                    (toFloat <| 1000 * (2 ^ attempt))
+                    (QueueBatchRequests [ retryMsg ])
+            )
+            retryResult
 
     else
         failureResult
