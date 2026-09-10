@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Api exposing (ApiState(..), Status(..), allLoaded, anyFailed, apiKeyView, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues)
+import Api exposing (ApiState(..), Status(..), allLoaded, allSettled, anyFailed, apiKeyView, changeFirstMatchingLoadingToFailed, changeFirstMatchingLoadingToLoaded, httpErrorToString, loadedValues, rateLimitRetryDelay, statusIsLoading)
 import Balance exposing (Balance, balancesView, getBalances)
 import Browser
 import CSS exposing (className)
@@ -13,15 +13,14 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
 import Prng.Uuid as Uuid exposing (Uuid)
-import Process
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Quote exposing (Quote, QuoteReq, RelativeAmount(..), postQuote, quotesView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
+import RequestQueue
 import String.Interpolate exposing (interpolate)
-import Task
-import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
+import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, getPendingTransfers, pendingIsLoading, pendingTransfersView, postFunding, sendTransfer, transfersView)
 import Utils exposing (classes)
 
 
@@ -66,8 +65,7 @@ type alias Model =
     , fundings : List (Status Int Funding)
     , confirmFunding : Bool
     , pending : Status () (List (Status Int Transfer))
-    , batchRequestQueue : List Msg
-    , batchDispatcherActive : Bool
+    , batchRequestQueue : RequestQueue.Queue Msg
     }
 
 
@@ -86,8 +84,7 @@ init ( seed, seedExtension ) =
       , fundings = []
       , confirmFunding = False
       , pending = NotLoaded
-      , batchRequestQueue = []
-      , batchDispatcherActive = False
+      , batchRequestQueue = RequestQueue.empty batchDelayMs
       }
     , Cmd.none
     )
@@ -261,8 +258,7 @@ type Msg
     | GotPendingCancel Int (Result ( Http.Error, AnyTransferReq ) Transfer)
     | ClearPending
     | QueueBatchRequests (List Msg)
-    | DispatchNextBatchRequest
-    | BatchRequestCooldownComplete
+    | RequestQueueMsg RequestQueue.Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -271,11 +267,8 @@ update msg ({ quoteForm, transferForm } as model) =
         ( QueueBatchRequests messages, _, _ ) ->
             queueBatchRequests messages model
 
-        ( DispatchNextBatchRequest, _, _ ) ->
-            dispatchNextBatchRequest model
-
-        ( BatchRequestCooldownComplete, _, _ ) ->
-            continueBatchRequestDispatch model
+        ( RequestQueueMsg queueMsg, _, _ ) ->
+            updateBatchRequestQueue queueMsg model
 
         ( ChangeApiKey key, _, _ ) ->
             ( resetQuotes
@@ -329,7 +322,7 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( SendPendingCancel attempt transferId, Connected key, _ ) ->
             if pendingIsLoading transferId model.pending then
-                ( model, putTransferCancel key transferId (GotPendingCancel attempt) )
+                ( model, sendTransfer key (CancelTransferReq transferId) (GotPendingCancel attempt) )
 
             else
                 ( model, Cmd.none )
@@ -508,7 +501,7 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( SendTransfer attempt req, Connected key, _ ) ->
             if statusIsLoading req model.transfers then
-                ( model, sendTransfer key attempt req )
+                ( model, sendTransfer key req (GotTransfer attempt) )
 
             else
                 ( model, Cmd.none )
@@ -662,158 +655,53 @@ generateAndPairUuids start list =
         list
 
 
-batchDelayMs : Int
+batchDelayMs : Float
 batchDelayMs =
     500
 
 
-maxRateLimitRetries : Int
-maxRateLimitRetries =
-    3
-
-
 pacedMessages : (a -> Msg) -> List a -> Cmd Msg
 pacedMessages toMsg items =
-    sendMessage <| QueueBatchRequests <| List.map toMsg items
-
-
-sendMessage : Msg -> Cmd Msg
-sendMessage message =
-    Task.perform identity <| Task.succeed message
+    RequestQueue.send <| QueueBatchRequests <| List.map toMsg items
 
 
 queueBatchRequests : List Msg -> Model -> ( Model, Cmd Msg )
 queueBatchRequests messages model =
-    if List.isEmpty messages then
-        ( model, Cmd.none )
-
-    else
-        let
-            updatedModel =
-                { model
-                    | batchRequestQueue = model.batchRequestQueue ++ messages
-                    , batchDispatcherActive = True
-                }
-        in
-        ( updatedModel
-        , if model.batchDispatcherActive then
-            Cmd.none
-
-          else
-            sendMessage DispatchNextBatchRequest
-        )
+    let
+        ( queue, command ) =
+            RequestQueue.enqueue RequestQueueMsg messages model.batchRequestQueue
+    in
+    ( { model | batchRequestQueue = queue }, command )
 
 
-dispatchNextBatchRequest : Model -> ( Model, Cmd Msg )
-dispatchNextBatchRequest model =
-    case model.batchRequestQueue of
-        message :: remainingMessages ->
-            ( { model | batchRequestQueue = remainingMessages }
-            , Cmd.batch
-                [ sendMessage message
-                , delayedMessage (toFloat batchDelayMs) BatchRequestCooldownComplete
-                ]
-            )
-
-        [] ->
-            ( { model | batchDispatcherActive = False }, Cmd.none )
-
-
-continueBatchRequestDispatch : Model -> ( Model, Cmd Msg )
-continueBatchRequestDispatch model =
-    if List.isEmpty model.batchRequestQueue then
-        ( { model | batchDispatcherActive = False }, Cmd.none )
-
-    else
-        ( model, sendMessage DispatchNextBatchRequest )
-
-
-delayedMessage : Float -> Msg -> Cmd Msg
-delayedMessage delay message =
-    Process.sleep delay
-        |> Task.perform (\_ -> message)
+updateBatchRequestQueue : RequestQueue.Msg -> Model -> ( Model, Cmd Msg )
+updateBatchRequestQueue queueMsg model =
+    let
+        ( queue, command ) =
+            RequestQueue.update RequestQueueMsg queueMsg model.batchRequestQueue
+    in
+    ( { model | batchRequestQueue = queue }, command )
 
 
 retryRateLimit : Int -> Http.Error -> Msg -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
 retryRateLimit attempt error retryMsg retryResult failureResult =
-    if isRateLimit error && attempt < maxRateLimitRetries then
-        Tuple.mapSecond
-            (\_ ->
-                delayedMessage
-                    (toFloat <| 1000 * (2 ^ attempt))
-                    (QueueBatchRequests [ retryMsg ])
-            )
-            retryResult
+    case rateLimitRetryDelay attempt error of
+        Just delay ->
+            Tuple.mapSecond
+                (\_ -> RequestQueue.sendAfter delay <| QueueBatchRequests [ retryMsg ])
+                retryResult
 
-    else
-        failureResult
-
-
-isRateLimit : Http.Error -> Bool
-isRateLimit error =
-    case error of
-        BadStatus 429 ->
-            True
-
-        _ ->
-            False
-
-
-statusIsLoading : a -> List (Status a b) -> Bool
-statusIsLoading request =
-    List.any
-        (\status ->
-            case status of
-                Loading loadingRequest ->
-                    loadingRequest == request
-
-                _ ->
-                    False
-        )
-
-
-pendingIsLoading : Int -> Status () (List (Status Int Transfer)) -> Bool
-pendingIsLoading transferId pending =
-    case pending of
-        Loaded transfers ->
-            statusIsLoading transferId transfers
-
-        _ ->
-            False
+        Nothing ->
+            failureResult
 
 
 refreshBalancesAfterFundingBatch : String -> Profile -> Model -> Cmd Msg
 refreshBalancesAfterFundingBatch key profile model =
-    if fundingBatchSettled model.fundings && not (List.isEmpty <| loadedValues model.fundings) then
+    if allSettled model.fundings && not (List.isEmpty <| loadedValues model.fundings) then
         getBalances key GotBalances profile
 
     else
         Cmd.none
-
-
-fundingBatchSettled : List (Status Int Funding) -> Bool
-fundingBatchSettled fundings =
-    not (List.isEmpty fundings)
-        && List.all
-            (\funding ->
-                case funding of
-                    Loading _ ->
-                        False
-
-                    _ ->
-                        True
-            )
-            fundings
-
-
-sendTransfer : String -> Int -> AnyTransferReq -> Cmd Msg
-sendTransfer key attempt req =
-    case req of
-        CreateTransferReq transferReq ->
-            postTransfer key transferReq (GotTransfer attempt)
-
-        CancelTransferReq transferId ->
-            putTransferCancel key transferId (GotTransfer attempt)
 
 
 
