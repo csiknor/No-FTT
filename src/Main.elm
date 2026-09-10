@@ -578,19 +578,19 @@ update msg ({ quoteForm, transferForm } as model) =
                             addFunding model <| Loaded funding
                     in
                     ( updatedModel
-                    , if allLoaded updatedModel.fundings then
-                        getBalances key GotBalances profile
-
-                      else
-                        Cmd.none
+                    , refreshBalancesAfterFundingBatch key profile updatedModel
                     )
 
                 Err ( e, transferId ) ->
+                    let
+                        updatedModel =
+                            addError "Funding" e <| addFunding model <| Failed transferId
+                    in
                     retryRateLimit attempt
                         e
                         (SendFunding (attempt + 1) transferId)
                         ( model, Cmd.none )
-                        ( addError "Funding" e <| addFunding model <| Failed transferId, Cmd.none )
+                        ( updatedModel, refreshBalancesAfterFundingBatch key profile updatedModel )
 
         _ ->
             ( withError model "Invalid operation", Cmd.none )
@@ -757,6 +757,30 @@ pendingIsLoading transferId pending =
 
         _ ->
             False
+
+
+refreshBalancesAfterFundingBatch : String -> Profile -> Model -> Cmd Msg
+refreshBalancesAfterFundingBatch key profile model =
+    if fundingBatchSettled model.fundings && not (List.isEmpty <| loadedValues model.fundings) then
+        getBalances key GotBalances profile
+
+    else
+        Cmd.none
+
+
+fundingBatchSettled : List (Status Int Funding) -> Bool
+fundingBatchSettled fundings =
+    not (List.isEmpty fundings)
+        && List.all
+            (\funding ->
+                case funding of
+                    Loading _ ->
+                        False
+
+                    _ ->
+                        True
+            )
+            fundings
 
 
 sendTransfer : String -> Int -> AnyTransferReq -> Cmd Msg
