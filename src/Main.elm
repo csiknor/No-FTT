@@ -13,12 +13,14 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Http exposing (Error(..), Expect)
 import Platform.Cmd as Cmd
 import Prng.Uuid as Uuid exposing (Uuid)
+import Process
 import Profile exposing (Profile, findPersonalProfile, getPersonalProfile, profileView)
 import Quote exposing (Quote, QuoteReq, RelativeAmount(..), postQuote, quotesView)
 import Random.Pcg.Extended exposing (Seed, initialSeed, step)
 import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import String.Interpolate exposing (interpolate)
+import Task
 import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
 import Utils exposing (classes)
 
@@ -236,19 +238,23 @@ type Msg
     | ChangeLimit String
     | SubmitQuote
     | ResubmitFailedQuote
-    | GotQuote (Result ( Http.Error, QuoteReq ) Quote)
+    | SendQuote Int QuoteReq
+    | GotQuote Int (Result ( Http.Error, QuoteReq ) Quote)
     | ChangeReference String
     | SubmitTransfer
     | ResubmitFailedTransfer
-    | GotTransfer (Result ( Http.Error, AnyTransferReq ) Transfer)
+    | SendTransfer Int AnyTransferReq
+    | GotTransfer Int (Result ( Http.Error, AnyTransferReq ) Transfer)
     | CancelTransfer
     | SubmitFunding
     | DoSubmitFunding
     | ResubmitFailedFunding
-    | GotFunding (Result ( Http.Error, Int ) Funding)
+    | SendFunding Int Int
+    | GotFunding Int (Result ( Http.Error, Int ) Funding)
     | GotPending (Result Http.Error (List Transfer))
     | CancelPending
-    | GotPendingCancel (Result ( Http.Error, AnyTransferReq ) Transfer)
+    | SendPendingCancel Int Int
+    | GotPendingCancel Int (Result ( Http.Error, AnyTransferReq ) Transfer)
     | ClearPending
 
 
@@ -299,16 +305,30 @@ update msg ({ quoteForm, transferForm } as model) =
             case model.pending of
                 Loaded transfers ->
                     ( { model | pending = Loaded <| List.map (.id >> Loading) <| loadedValues transfers }
-                    , Cmd.batch <| List.map (\t -> putTransferCancel key t.id GotPendingCancel) <| loadedValues transfers
+                    , pacedMessages (SendPendingCancel 0) <| List.map .id <| loadedValues transfers
                     )
 
                 _ ->
                     ( withError model "Invalid Pending", Cmd.none )
 
-        ( GotPendingCancel response, _, _ ) ->
+        ( SendPendingCancel attempt transferId, Connected key, _ ) ->
+            if pendingIsLoading transferId model.pending then
+                ( model, putTransferCancel key transferId (GotPendingCancel attempt) )
+
+            else
+                ( model, Cmd.none )
+
+        ( GotPendingCancel attempt response, _, _ ) ->
             case response of
                 Ok transfer ->
                     ( addPending model <| Loaded transfer, Cmd.none )
+
+                Err ( e, (CancelTransferReq transferId) as req ) ->
+                    retryRateLimit attempt
+                        e
+                        (SendPendingCancel (attempt + 1) transferId)
+                        ( model, Cmd.none )
+                        ( addError "Pending" e <| addPending model <| Failed req, Cmd.none )
 
                 Err ( e, req ) ->
                     ( addError "Pending" e <| addPending model <| Failed req, Cmd.none )
@@ -368,36 +388,49 @@ update msg ({ quoteForm, transferForm } as model) =
                                 chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
                     in
                     ( withQuotes (withQuoteForm (resetQuotes model) quoteForm) <| List.map Loading reqs
-                    , Cmd.batch <| List.map (\r -> postQuote key r GotQuote) reqs
+                    , pacedMessages (SendQuote 0) reqs
                     )
 
                 _ ->
                     ( withError model "Invalid quotes: missing input", Cmd.none )
 
-        ( ResubmitFailedQuote, Connected key, _ ) ->
-            Tuple.mapBoth
-                (\quotes -> withQuotes model quotes)
-                (\cmds -> Cmd.batch cmds)
-            <|
-                List.unzip <|
-                    List.map
-                        (\q ->
-                            case q of
-                                Failed req ->
-                                    ( Loading req, postQuote key req GotQuote )
+        ( ResubmitFailedQuote, Connected _, _ ) ->
+            let
+                ( quotes, maybeRequests ) =
+                    model.quotes
+                        |> List.map
+                            (\q ->
+                                case q of
+                                    Failed req ->
+                                        ( Loading req, Just req )
 
-                                _ ->
-                                    ( q, Cmd.none )
-                        )
-                        model.quotes
+                                    _ ->
+                                        ( q, Nothing )
+                            )
+                        |> List.unzip
+            in
+            ( withQuotes model quotes
+            , pacedMessages (SendQuote 0) <| List.filterMap identity maybeRequests
+            )
 
-        ( GotQuote response, _, _ ) ->
+        ( SendQuote attempt req, Connected key, _ ) ->
+            if statusIsLoading req model.quotes then
+                ( model, postQuote key req (GotQuote attempt) )
+
+            else
+                ( model, Cmd.none )
+
+        ( GotQuote attempt response, _, _ ) ->
             case response of
                 Ok quote ->
                     ( addQuote model <| Loaded quote, Cmd.none )
 
                 Err ( e, req ) ->
-                    ( addError "Quote" e <| addQuote model <| Failed req, Cmd.none )
+                    retryRateLimit attempt
+                        e
+                        (SendQuote (attempt + 1) req)
+                        ( model, Cmd.none )
+                        ( addError "Quote" e <| addQuote model <| Failed req, Cmd.none )
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
@@ -429,7 +462,7 @@ update msg ({ quoteForm, transferForm } as model) =
                             , transfers = List.map (\r -> Loading <| CreateTransferReq r) reqs
                             , seed = newSeed
                           }
-                        , Cmd.batch <| List.map (\r -> postTransfer key r GotTransfer) reqs
+                        , pacedMessages (CreateTransferReq >> SendTransfer 0) reqs
                         )
 
                     else
@@ -438,33 +471,43 @@ update msg ({ quoteForm, transferForm } as model) =
                 _ ->
                     ( withError model "Invalid Quotes", Cmd.none )
 
-        ( ResubmitFailedTransfer, Connected key, _ ) ->
-            Tuple.mapBoth
-                (\transfers -> { model | transferForm = { transferForm | action = Just "Resubmitted" }, transfers = transfers })
-                (\cmds -> Cmd.batch cmds)
-            <|
-                List.unzip <|
-                    List.map
-                        (\t ->
-                            case t of
-                                Failed (CreateTransferReq transferReq) ->
-                                    ( Loading (CreateTransferReq transferReq), postTransfer key transferReq GotTransfer )
+        ( ResubmitFailedTransfer, Connected _, _ ) ->
+            let
+                ( transfers, maybeRequests ) =
+                    model.transfers
+                        |> List.map
+                            (\t ->
+                                case t of
+                                    Failed req ->
+                                        ( Loading req, Just req )
 
-                                Failed (CancelTransferReq transferId) ->
-                                    ( Loading (CancelTransferReq transferId), putTransferCancel key transferId GotTransfer )
+                                    _ ->
+                                        ( t, Nothing )
+                            )
+                        |> List.unzip
+            in
+            ( { model | transferForm = { transferForm | action = Just "Resubmitted" }, transfers = transfers }
+            , pacedMessages (SendTransfer 0) <| List.filterMap identity maybeRequests
+            )
 
-                                _ ->
-                                    ( t, Cmd.none )
-                        )
-                        model.transfers
+        ( SendTransfer attempt req, Connected key, _ ) ->
+            if statusIsLoading req model.transfers then
+                ( model, sendTransfer key attempt req )
 
-        ( GotTransfer response, _, _ ) ->
+            else
+                ( model, Cmd.none )
+
+        ( GotTransfer attempt response, _, _ ) ->
             case response of
                 Ok transfer ->
                     ( addTransfer model <| Loaded transfer, Cmd.none )
 
                 Err ( e, req ) ->
-                    ( addError "Transfer" e <| addTransfer model <| Failed req, Cmd.none )
+                    retryRateLimit attempt
+                        e
+                        (SendTransfer (attempt + 1) req)
+                        ( model, Cmd.none )
+                        ( addError "Transfer" e <| addTransfer model <| Failed req, Cmd.none )
 
         ( CancelTransfer, Connected key, _ ) ->
             if allLoaded model.transfers then
@@ -472,7 +515,7 @@ update msg ({ quoteForm, transferForm } as model) =
                     | transferForm = { transferForm | action = Just "Cancelled" }
                     , transfers = List.map (\t -> Loading <| CancelTransferReq t.id) <| loadedValues model.transfers
                   }
-                , cancelTransfers key <| loadedValues model.transfers
+                , pacedMessages (\t -> SendTransfer 0 <| CancelTransferReq t.id) <| loadedValues model.transfers
                 )
 
             else
@@ -484,36 +527,59 @@ update msg ({ quoteForm, transferForm } as model) =
         ( DoSubmitFunding, Connected key, Loaded profile ) ->
             if allLoaded model.transfers then
                 ( { model | fundings = List.map (\t -> Loading t.id) <| loadedValues model.transfers }
-                , submitFundings key profile.id <| loadedValues model.transfers
+                , pacedMessages (SendFunding 0) <| List.map .id <| loadedValues model.transfers
                 )
 
             else
                 ( withError model "Invalid Transfer", Cmd.none )
 
-        ( ResubmitFailedFunding, Connected key, Loaded profile ) ->
-            Tuple.mapBoth
-                (\fundings -> { model | fundings = fundings })
-                (\cmds -> Cmd.batch cmds)
-            <|
-                List.unzip <|
-                    List.map
-                        (\f ->
-                            case f of
-                                Failed transferId ->
-                                    ( Loading transferId, postFunding key profile.id transferId GotFunding )
+        ( ResubmitFailedFunding, Connected _, Loaded _ ) ->
+            let
+                ( fundings, maybeTransferIds ) =
+                    model.fundings
+                        |> List.map
+                            (\f ->
+                                case f of
+                                    Failed transferId ->
+                                        ( Loading transferId, Just transferId )
 
-                                _ ->
-                                    ( f, Cmd.none )
-                        )
-                        model.fundings
+                                    _ ->
+                                        ( f, Nothing )
+                            )
+                        |> List.unzip
+            in
+            ( { model | fundings = fundings }
+            , pacedMessages (SendFunding 0) <| List.filterMap identity maybeTransferIds
+            )
 
-        ( GotFunding response, Connected key, Loaded profile ) ->
+        ( SendFunding attempt transferId, Connected key, Loaded profile ) ->
+            if statusIsLoading transferId model.fundings then
+                ( model, postFunding key profile.id transferId (GotFunding attempt) )
+
+            else
+                ( model, Cmd.none )
+
+        ( GotFunding attempt response, Connected key, Loaded profile ) ->
             case response of
                 Ok funding ->
-                    ( addFunding model <| Loaded funding, getBalances key GotBalances profile )
+                    let
+                        updatedModel =
+                            addFunding model <| Loaded funding
+                    in
+                    ( updatedModel
+                    , if allLoaded updatedModel.fundings then
+                        getBalances key GotBalances profile
+
+                      else
+                        Cmd.none
+                    )
 
                 Err ( e, transferId ) ->
-                    ( addError "Funding" e <| addFunding model <| Failed transferId, Cmd.none )
+                    retryRateLimit attempt
+                        e
+                        (SendFunding (attempt + 1) transferId)
+                        ( model, Cmd.none )
+                        ( addError "Funding" e <| addFunding model <| Failed transferId, Cmd.none )
 
         _ ->
             ( withError model "Invalid operation", Cmd.none )
@@ -580,21 +646,79 @@ generateAndPairUuids start list =
         list
 
 
-cancelTransfers : String -> List Transfer -> Cmd Msg
-cancelTransfers key transfers =
-    Cmd.batch <|
-        List.map
-            (\t -> putTransferCancel key t.id GotTransfer)
-            transfers
+batchDelayMs : Float
+batchDelayMs =
+    500
 
 
-submitFundings : String -> Int -> List Transfer -> Cmd Msg
-submitFundings key profileId transfers =
-    Cmd.batch
-        (List.map
-            (\t -> postFunding key profileId t.id GotFunding)
-            transfers
+maxRateLimitRetries : Int
+maxRateLimitRetries =
+    3
+
+
+pacedMessages : (a -> Msg) -> List a -> Cmd Msg
+pacedMessages toMsg items =
+    items
+        |> List.indexedMap (\index item -> delayedMessage (toFloat index * batchDelayMs) <| toMsg item)
+        |> Cmd.batch
+
+
+delayedMessage : Float -> Msg -> Cmd Msg
+delayedMessage delay message =
+    Process.sleep delay
+        |> Task.perform (\_ -> message)
+
+
+retryRateLimit : Int -> Http.Error -> Msg -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
+retryRateLimit attempt error retryMsg retryResult failureResult =
+    if isRateLimit error && attempt < maxRateLimitRetries then
+        Tuple.mapSecond (\_ -> delayedMessage (toFloat <| 1000 * (2 ^ attempt)) retryMsg) retryResult
+
+    else
+        failureResult
+
+
+isRateLimit : Http.Error -> Bool
+isRateLimit error =
+    case error of
+        BadStatus 429 ->
+            True
+
+        _ ->
+            False
+
+
+statusIsLoading : a -> List (Status a b) -> Bool
+statusIsLoading request =
+    List.any
+        (\status ->
+            case status of
+                Loading loadingRequest ->
+                    loadingRequest == request
+
+                _ ->
+                    False
         )
+
+
+pendingIsLoading : Int -> Status () (List (Status Int Transfer)) -> Bool
+pendingIsLoading transferId pending =
+    case pending of
+        Loaded transfers ->
+            statusIsLoading transferId transfers
+
+        _ ->
+            False
+
+
+sendTransfer : String -> Int -> AnyTransferReq -> Cmd Msg
+sendTransfer key attempt req =
+    case req of
+        CreateTransferReq transferReq ->
+            postTransfer key transferReq (GotTransfer attempt)
+
+        CancelTransferReq transferId ->
+            putTransferCancel key transferId (GotTransfer attempt)
 
 
 
