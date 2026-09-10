@@ -21,7 +21,6 @@ import Rate exposing (Rate, getRate)
 import Recipient exposing (Recipient, getRecipients, recipientsView)
 import String.Interpolate exposing (interpolate)
 import Task
-import Time
 import Transfer exposing (AnyTransferReq(..), Funding, Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
 import Utils exposing (classes)
 
@@ -67,7 +66,8 @@ type alias Model =
     , fundings : List (Status Int Funding)
     , confirmFunding : Bool
     , pending : Status () (List (Status Int Transfer))
-    , nextBatchRequestAt : Int
+    , batchRequestQueue : List Msg
+    , batchDispatcherActive : Bool
     }
 
 
@@ -86,7 +86,8 @@ init ( seed, seedExtension ) =
       , fundings = []
       , confirmFunding = False
       , pending = NotLoaded
-      , nextBatchRequestAt = 0
+      , batchRequestQueue = []
+      , batchDispatcherActive = False
       }
     , Cmd.none
     )
@@ -260,17 +261,21 @@ type Msg
     | GotPendingCancel Int (Result ( Http.Error, AnyTransferReq ) Transfer)
     | ClearPending
     | QueueBatchRequests (List Msg)
-    | ScheduleBatchRequests Time.Posix (List Msg)
+    | DispatchNextBatchRequest
+    | BatchRequestCooldownComplete
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
 update msg ({ quoteForm, transferForm } as model) =
     case ( msg, model.state, model.profile ) of
         ( QueueBatchRequests messages, _, _ ) ->
-            ( model, scheduleBatchRequests messages )
+            queueBatchRequests messages model
 
-        ( ScheduleBatchRequests now messages, _, _ ) ->
-            scheduleBatchRequestsAt now messages model
+        ( DispatchNextBatchRequest, _, _ ) ->
+            dispatchNextBatchRequest model
+
+        ( BatchRequestCooldownComplete, _, _ ) ->
+            continueBatchRequestDispatch model
 
         ( ChangeApiKey key, _, _ ) ->
             ( resetQuotes
@@ -669,40 +674,58 @@ maxRateLimitRetries =
 
 pacedMessages : (a -> Msg) -> List a -> Cmd Msg
 pacedMessages toMsg items =
-    scheduleBatchRequests <| List.map toMsg items
+    sendMessage <| QueueBatchRequests <| List.map toMsg items
 
 
-scheduleBatchRequests : List Msg -> Cmd Msg
-scheduleBatchRequests messages =
+sendMessage : Msg -> Cmd Msg
+sendMessage message =
+    Task.perform identity <| Task.succeed message
+
+
+queueBatchRequests : List Msg -> Model -> ( Model, Cmd Msg )
+queueBatchRequests messages model =
     if List.isEmpty messages then
-        Cmd.none
+        ( model, Cmd.none )
 
     else
-        Task.perform (\now -> ScheduleBatchRequests now messages) Time.now
+        let
+            updatedModel =
+                { model
+                    | batchRequestQueue = model.batchRequestQueue ++ messages
+                    , batchDispatcherActive = True
+                }
+        in
+        ( updatedModel
+        , if model.batchDispatcherActive then
+            Cmd.none
+
+          else
+            sendMessage DispatchNextBatchRequest
+        )
 
 
-scheduleBatchRequestsAt : Time.Posix -> List Msg -> Model -> ( Model, Cmd Msg )
-scheduleBatchRequestsAt now messages model =
-    let
-        nowMillis =
-            Time.posixToMillis now
+dispatchNextBatchRequest : Model -> ( Model, Cmd Msg )
+dispatchNextBatchRequest model =
+    case model.batchRequestQueue of
+        message :: remainingMessages ->
+            ( { model | batchRequestQueue = remainingMessages }
+            , Cmd.batch
+                [ sendMessage message
+                , delayedMessage (toFloat batchDelayMs) BatchRequestCooldownComplete
+                ]
+            )
 
-        firstRequestAt =
-            max nowMillis model.nextBatchRequestAt
+        [] ->
+            ( { model | batchDispatcherActive = False }, Cmd.none )
 
-        commands =
-            messages
-                |> List.indexedMap
-                    (\index message ->
-                        delayedMessage
-                            (toFloat <| firstRequestAt + index * batchDelayMs - nowMillis)
-                            message
-                    )
 
-        nextRequestAt =
-            firstRequestAt + List.length messages * batchDelayMs
-    in
-    ( { model | nextBatchRequestAt = nextRequestAt }, Cmd.batch commands )
+continueBatchRequestDispatch : Model -> ( Model, Cmd Msg )
+continueBatchRequestDispatch model =
+    if List.isEmpty model.batchRequestQueue then
+        ( { model | batchDispatcherActive = False }, Cmd.none )
+
+    else
+        ( model, sendMessage DispatchNextBatchRequest )
 
 
 delayedMessage : Float -> Msg -> Cmd Msg
