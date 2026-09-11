@@ -1,6 +1,6 @@
-module Transfer exposing (AnyTransferReq(..), Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, getPendingTransfers, pendingTransfersView, postFunding, postTransfer, putTransferCancel, transfersView)
+module Transfer exposing (AnyTransferReq(..), Funding, FundingStatus(..), Transfer, TransferReq, fundingsView, getPendingTransfers, pendingIsLoading, pendingTransfersView, postFunding, postTransfer, putTransferCancel, sendTransfer, transfersView)
 
-import Api exposing (Status(..), loadedValues, wiseApiGet, wiseApiPost, wiseApiPut, wrapError)
+import Api exposing (Status(..), loadedValues, statusIsLoading, wiseApiGet, wiseApiPost, wiseApiPut, wrapError)
 import CSS.Attributes exposing (class)
 import CSS.Bootstrap exposing (alert, alertDismissible, alertLight, alertLink, alertWarning, btn, btnClose, btnWarning, collapse, fade, mb3, mt3, show, spinnerBorder, tableBordered, tableHover, tableStriped, tableWarning, visuallyHidden)
 import Html exposing (Html, a, button, div, h5, span, table, tbody, td, text, th, thead, tr)
@@ -306,6 +306,26 @@ putTransferCancel token transferId msg =
         , expect = Http.expectJson (wrapError (CancelTransferReq transferId) msg) transferDecoder
         , token = token
         }
+
+
+sendTransfer : String -> AnyTransferReq -> (Result ( Http.Error, AnyTransferReq ) Transfer -> msg) -> Cmd msg
+sendTransfer token req msg =
+    case req of
+        CreateTransferReq transferReq ->
+            postTransfer token transferReq msg
+
+        CancelTransferReq transferId ->
+            putTransferCancel token transferId msg
+
+
+pendingIsLoading : Int -> Status () (List (Status Int Transfer)) -> Bool
+pendingIsLoading transferId pending =
+    case pending of
+        Loaded transfers ->
+            statusIsLoading transferId transfers
+
+        _ ->
+            False
 
 
 transferEncoder : TransferReq -> E.Value

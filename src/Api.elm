@@ -2,12 +2,15 @@ module Api exposing
     ( ApiState(..)
     , Status(..)
     , allLoaded
+    , allSettled
     , anyFailed
     , apiKeyView
     , changeFirstMatchingLoadingToFailed
     , changeFirstMatchingLoadingToLoaded
     , httpErrorToString
     , loadedValues
+    , rateLimitRetryDelay
+    , statusIsLoading
     , wiseApiGet
     , wiseApiPost
     , wiseApiPut
@@ -109,6 +112,25 @@ allLoaded list =
                 list
 
 
+allSettled : List (Status a b) -> Bool
+allSettled list =
+    case list of
+        [] ->
+            False
+
+        _ ->
+            List.all
+                (\status ->
+                    case status of
+                        Loading _ ->
+                            False
+
+                        _ ->
+                            True
+                )
+                list
+
+
 loadedValues : List (Status a b) -> List b
 loadedValues =
     List.filterMap
@@ -133,6 +155,28 @@ anyFailed =
                 _ ->
                     False
         )
+
+
+statusIsLoading : a -> List (Status a b) -> Bool
+statusIsLoading request =
+    List.any
+        (\status ->
+            case status of
+                Loading loadingRequest ->
+                    loadingRequest == request
+
+                _ ->
+                    False
+        )
+
+
+rateLimitRetryDelay : Int -> Http.Error -> Maybe Float
+rateLimitRetryDelay attempt error =
+    if error == BadStatus 429 && attempt < 3 then
+        Just <| toFloat <| 1000 * (2 ^ attempt)
+
+    else
+        Nothing
 
 
 
