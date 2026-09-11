@@ -1,4 +1,4 @@
-module RequestQueue exposing (Msg, Queue, empty, enqueue, send, sendAfter, update)
+module RequestQueue exposing (Msg, Queue, empty, enqueue, filter, send, sendAfter, update)
 
 import Platform.Cmd as Cmd
 import Process
@@ -48,6 +48,11 @@ enqueue toParent messages (Queue queue) =
           else
             send <| toParent Dispatch
         )
+
+
+filter : (parentMsg -> Bool) -> Queue parentMsg -> Queue parentMsg
+filter predicate (Queue queue) =
+    Queue { queue | pending = List.filter predicate queue.pending }
 
 
 update : (Msg -> parentMsg) -> Msg -> Queue parentMsg -> ( Queue parentMsg, Cmd parentMsg )

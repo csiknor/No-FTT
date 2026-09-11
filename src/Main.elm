@@ -51,6 +51,10 @@ type alias TransferForm =
     }
 
 
+type alias BatchId =
+    Int
+
+
 type alias Model =
     { errors : List String
     , seed : Seed
@@ -66,6 +70,10 @@ type alias Model =
     , confirmFunding : Bool
     , pending : Status () (List (Status Int Transfer))
     , batchRequestQueue : RequestQueue.Queue Msg
+    , quoteBatchId : BatchId
+    , transferBatchId : BatchId
+    , fundingBatchId : BatchId
+    , pendingCancelBatchId : BatchId
     }
 
 
@@ -85,6 +93,10 @@ init ( seed, seedExtension ) =
       , confirmFunding = False
       , pending = NotLoaded
       , batchRequestQueue = RequestQueue.empty batchDelayMs
+      , quoteBatchId = 0
+      , transferBatchId = 0
+      , fundingBatchId = 0
+      , pendingCancelBatchId = 0
       }
     , Cmd.none
     )
@@ -179,7 +191,11 @@ withError ({ errors } as model) error =
 
 resetQuotes : Model -> Model
 resetQuotes model =
-    { model
+    let
+        resetModel =
+            invalidateQuoteWorkflow model
+    in
+    { resetModel
         | quoteForm = QuoteForm Nothing Nothing 100 100
         , quotes = []
         , transferForm = TransferForm "" Nothing
@@ -239,23 +255,23 @@ type Msg
     | ChangeLimit String
     | SubmitQuote
     | ResubmitFailedQuote
-    | SendQuote Int QuoteReq
-    | GotQuote Int (Result ( Http.Error, QuoteReq ) Quote)
+    | SendQuote BatchId Int QuoteReq
+    | GotQuote BatchId Int (Result ( Http.Error, QuoteReq ) Quote)
     | ChangeReference String
     | SubmitTransfer
     | ResubmitFailedTransfer
-    | SendTransfer Int AnyTransferReq
-    | GotTransfer Int (Result ( Http.Error, AnyTransferReq ) Transfer)
+    | SendTransfer BatchId Int AnyTransferReq
+    | GotTransfer BatchId Int (Result ( Http.Error, AnyTransferReq ) Transfer)
     | CancelTransfer
     | SubmitFunding
     | DoSubmitFunding
     | ResubmitFailedFunding
-    | SendFunding Int Int
-    | GotFunding Int (Result ( Http.Error, Int ) Funding)
+    | SendFunding BatchId Int Int
+    | GotFunding BatchId Int (Result ( Http.Error, Int ) Funding)
     | GotPending (Result Http.Error (List Transfer))
     | CancelPending
-    | SendPendingCancel Int Int
-    | GotPendingCancel Int (Result ( Http.Error, AnyTransferReq ) Transfer)
+    | SendPendingCancel BatchId Int Int
+    | GotPendingCancel BatchId Int (Result ( Http.Error, AnyTransferReq ) Transfer)
     | ClearPending
     | QueueBatchRequests (List Msg)
     | RequestQueueMsg RequestQueue.Msg
@@ -271,7 +287,7 @@ update msg ({ quoteForm, transferForm } as model) =
             updateBatchRequestQueue queueMsg model
 
         ( ChangeApiKey key, _, _ ) ->
-            ( resetQuotes
+            ( resetConnection
                 { model
                     | state = NotConnected <| Just key
                     , profile = NotLoaded
@@ -282,7 +298,7 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( SubmitApiKey, NotConnected (Just key), _ ) ->
             if Uuid.isValidUuid key then
-                ( resetQuotes { model | state = Connected key, profile = Loading (), balances = NotLoaded }
+                ( resetConnection { model | state = Connected key, profile = Loading (), balances = NotLoaded }
                 , Cmd.batch
                     [ getPersonalProfile key GotProfiles
                     , getPendingTransfers key GotPending
@@ -308,39 +324,54 @@ update msg ({ quoteForm, transferForm } as model) =
             handleResultAndStop "Pending" response (withPending model)
 
         ( ClearPending, _, _ ) ->
-            ( { model | pending = NotLoaded }, Cmd.none )
+            let
+                batchModel =
+                    invalidatePendingCancelWorkflow model
+            in
+            ( { batchModel | pending = NotLoaded }, Cmd.none )
 
         ( CancelPending, Connected key, _ ) ->
             case model.pending of
                 Loaded transfers ->
-                    ( { model | pending = Loaded <| List.map (.id >> Loading) <| loadedValues transfers }
-                    , pacedMessages (SendPendingCancel 0) <| List.map .id <| loadedValues transfers
+                    let
+                        batchModel =
+                            invalidatePendingCancelWorkflow model
+
+                        batchId =
+                            batchModel.pendingCancelBatchId
+                    in
+                    ( { batchModel | pending = Loaded <| List.map (.id >> Loading) <| loadedValues transfers }
+                    , pacedMessages (SendPendingCancel batchId 0) <| List.map .id <| loadedValues transfers
                     )
 
                 _ ->
                     ( withError model "Invalid Pending", Cmd.none )
 
-        ( SendPendingCancel attempt transferId, Connected key, _ ) ->
-            if pendingIsLoading transferId model.pending then
-                ( model, sendTransfer key (CancelTransferReq transferId) (GotPendingCancel attempt) )
+        ( SendPendingCancel batchId attempt transferId, Connected key, _ ) ->
+            if batchId == model.pendingCancelBatchId && pendingIsLoading transferId model.pending then
+                ( model, sendTransfer key (CancelTransferReq transferId) (GotPendingCancel batchId attempt) )
 
             else
                 ( model, Cmd.none )
 
-        ( GotPendingCancel attempt response, _, _ ) ->
-            case response of
-                Ok transfer ->
-                    ( addPending model <| Loaded transfer, Cmd.none )
+        ( GotPendingCancel batchId attempt response, _, _ ) ->
+            if batchId /= model.pendingCancelBatchId then
+                ( model, Cmd.none )
 
-                Err ( e, (CancelTransferReq transferId) as req ) ->
-                    retryRateLimit attempt
-                        e
-                        (SendPendingCancel (attempt + 1) transferId)
-                        ( model, Cmd.none )
+            else
+                case response of
+                    Ok transfer ->
+                        ( addPending model <| Loaded transfer, Cmd.none )
+
+                    Err ( e, (CancelTransferReq transferId) as req ) ->
+                        retryRateLimit attempt
+                            e
+                            (SendPendingCancel batchId (attempt + 1) transferId)
+                            ( model, Cmd.none )
+                            ( addError "Pending" e <| addPending model <| Failed req, Cmd.none )
+
+                    Err ( e, req ) ->
                         ( addError "Pending" e <| addPending model <| Failed req, Cmd.none )
-
-                Err ( e, req ) ->
-                    ( addError "Pending" e <| addPending model <| Failed req, Cmd.none )
 
         ( GotBalances response, _, _ ) ->
             handleResultAndStop "Balances" response (withBalances model)
@@ -395,9 +426,15 @@ update msg ({ quoteForm, transferForm } as model) =
                                 )
                             <|
                                 chunkAmountByLimit model.quoteForm.amount model.quoteForm.limit
+
+                        batchModel =
+                            withQuoteForm (resetQuotes model) quoteForm
+
+                        batchId =
+                            batchModel.quoteBatchId
                     in
-                    ( withQuotes (withQuoteForm (resetQuotes model) quoteForm) <| List.map Loading reqs
-                    , pacedMessages (SendQuote 0) reqs
+                    ( withQuotes batchModel <| List.map Loading reqs
+                    , pacedMessages (SendQuote batchId 0) reqs
                     )
 
                 _ ->
@@ -419,27 +456,31 @@ update msg ({ quoteForm, transferForm } as model) =
                         |> List.unzip
             in
             ( withQuotes model quotes
-            , pacedMessages (SendQuote 0) <| List.filterMap identity maybeRequests
+            , pacedMessages (SendQuote model.quoteBatchId 0) <| List.filterMap identity maybeRequests
             )
 
-        ( SendQuote attempt req, Connected key, _ ) ->
-            if statusIsLoading req model.quotes then
-                ( model, postQuote key req (GotQuote attempt) )
+        ( SendQuote batchId attempt req, Connected key, _ ) ->
+            if batchId == model.quoteBatchId && statusIsLoading req model.quotes then
+                ( model, postQuote key req (GotQuote batchId attempt) )
 
             else
                 ( model, Cmd.none )
 
-        ( GotQuote attempt response, _, _ ) ->
-            case response of
-                Ok quote ->
-                    ( addQuote model <| Loaded quote, Cmd.none )
+        ( GotQuote batchId attempt response, _, _ ) ->
+            if batchId /= model.quoteBatchId then
+                ( model, Cmd.none )
 
-                Err ( e, req ) ->
-                    retryRateLimit attempt
-                        e
-                        (SendQuote (attempt + 1) req)
-                        ( model, Cmd.none )
-                        ( addError "Quote" e <| addQuote model <| Failed req, Cmd.none )
+            else
+                case response of
+                    Ok quote ->
+                        ( addQuote model <| Loaded quote, Cmd.none )
+
+                    Err ( e, req ) ->
+                        retryRateLimit attempt
+                            e
+                            (SendQuote batchId (attempt + 1) req)
+                            ( model, Cmd.none )
+                            ( addError "Quote" e <| addQuote model <| Failed req, Cmd.none )
 
         ( ChangeReference val, _, _ ) ->
             ( { model | transferForm = { transferForm | reference = val } }, Cmd.none )
@@ -451,6 +492,12 @@ update msg ({ quoteForm, transferForm } as model) =
                         let
                             ( quoteAndTransactionIds, newSeed ) =
                                 generateAndPairUuids model.seed <| List.map .id <| loadedValues model.quotes
+
+                            batchModel =
+                                invalidateTransferWorkflow model
+
+                            batchId =
+                                batchModel.transferBatchId
 
                             reqs =
                                 List.indexedMap
@@ -466,12 +513,12 @@ update msg ({ quoteForm, transferForm } as model) =
                                     )
                                     quoteAndTransactionIds
                         in
-                        ( { model
+                        ( { batchModel
                             | transferForm = { transferForm | action = Just "Created" }
                             , transfers = List.map (\r -> Loading <| CreateTransferReq r) reqs
                             , seed = newSeed
                           }
-                        , pacedMessages (CreateTransferReq >> SendTransfer 0) reqs
+                        , pacedMessages (CreateTransferReq >> SendTransfer batchId 0) reqs
                         )
 
                     else
@@ -496,35 +543,49 @@ update msg ({ quoteForm, transferForm } as model) =
                         |> List.unzip
             in
             ( { model | transferForm = { transferForm | action = Just "Resubmitted" }, transfers = transfers }
-            , pacedMessages (SendTransfer 0) <| List.filterMap identity maybeRequests
+            , pacedMessages (SendTransfer model.transferBatchId 0) <| List.filterMap identity maybeRequests
             )
 
-        ( SendTransfer attempt req, Connected key, _ ) ->
-            if statusIsLoading req model.transfers then
-                ( model, sendTransfer key req (GotTransfer attempt) )
+        ( SendTransfer batchId attempt req, Connected key, _ ) ->
+            if batchId == model.transferBatchId && statusIsLoading req model.transfers then
+                ( model, sendTransfer key req (GotTransfer batchId attempt) )
 
             else
                 ( model, Cmd.none )
 
-        ( GotTransfer attempt response, _, _ ) ->
-            case response of
-                Ok transfer ->
-                    ( addTransfer model <| Loaded transfer, Cmd.none )
+        ( GotTransfer batchId attempt response, _, _ ) ->
+            if batchId /= model.transferBatchId then
+                ( model, Cmd.none )
 
-                Err ( e, req ) ->
-                    retryRateLimit attempt
-                        e
-                        (SendTransfer (attempt + 1) req)
-                        ( model, Cmd.none )
-                        ( addError "Transfer" e <| addTransfer model <| Failed req, Cmd.none )
+            else
+                case response of
+                    Ok transfer ->
+                        ( addTransfer model <| Loaded transfer, Cmd.none )
+
+                    Err ( e, req ) ->
+                        retryRateLimit attempt
+                            e
+                            (SendTransfer batchId (attempt + 1) req)
+                            ( model, Cmd.none )
+                            ( addError "Transfer" e <| addTransfer model <| Failed req, Cmd.none )
 
         ( CancelTransfer, Connected key, _ ) ->
             if allLoaded model.transfers then
-                ( { model
+                let
+                    transfers =
+                        loadedValues model.transfers
+
+                    batchModel =
+                        invalidateTransferWorkflow model
+
+                    batchId =
+                        batchModel.transferBatchId
+                in
+                ( { batchModel
                     | transferForm = { transferForm | action = Just "Cancelled" }
-                    , transfers = List.map (\t -> Loading <| CancelTransferReq t.id) <| loadedValues model.transfers
+                    , transfers = List.map (\t -> Loading <| CancelTransferReq t.id) transfers
                   }
-                , pacedMessages (\t -> SendTransfer 0 <| CancelTransferReq t.id) <| loadedValues model.transfers
+                , pacedMessages (\t -> SendTransfer batchId 0 <| CancelTransferReq t.id) transfers
                 )
 
             else
@@ -535,8 +596,15 @@ update msg ({ quoteForm, transferForm } as model) =
 
         ( DoSubmitFunding, Connected key, Loaded profile ) ->
             if allLoaded model.transfers then
-                ( { model | fundings = List.map (\t -> Loading t.id) <| loadedValues model.transfers }
-                , pacedMessages (SendFunding 0) <| List.map .id <| loadedValues model.transfers
+                let
+                    batchModel =
+                        invalidateFundingWorkflow model
+
+                    batchId =
+                        batchModel.fundingBatchId
+                in
+                ( { batchModel | fundings = List.map (\t -> Loading t.id) <| loadedValues model.transfers }
+                , pacedMessages (SendFunding batchId 0) <| List.map .id <| loadedValues model.transfers
                 )
 
             else
@@ -558,37 +626,41 @@ update msg ({ quoteForm, transferForm } as model) =
                         |> List.unzip
             in
             ( { model | fundings = fundings }
-            , pacedMessages (SendFunding 0) <| List.filterMap identity maybeTransferIds
+            , pacedMessages (SendFunding model.fundingBatchId 0) <| List.filterMap identity maybeTransferIds
             )
 
-        ( SendFunding attempt transferId, Connected key, Loaded profile ) ->
-            if statusIsLoading transferId model.fundings then
-                ( model, postFunding key profile.id transferId (GotFunding attempt) )
+        ( SendFunding batchId attempt transferId, Connected key, Loaded profile ) ->
+            if batchId == model.fundingBatchId && statusIsLoading transferId model.fundings then
+                ( model, postFunding key profile.id transferId (GotFunding batchId attempt) )
 
             else
                 ( model, Cmd.none )
 
-        ( GotFunding attempt response, Connected key, Loaded profile ) ->
-            case response of
-                Ok funding ->
-                    let
-                        updatedModel =
-                            addFunding model <| Loaded funding
-                    in
-                    ( updatedModel
-                    , refreshBalancesAfterFundingBatch key profile updatedModel
-                    )
+        ( GotFunding batchId attempt response, Connected key, Loaded profile ) ->
+            if batchId /= model.fundingBatchId then
+                ( model, Cmd.none )
 
-                Err ( e, transferId ) ->
-                    let
-                        updatedModel =
-                            addError "Funding" e <| addFunding model <| Failed transferId
-                    in
-                    retryRateLimit attempt
-                        e
-                        (SendFunding (attempt + 1) transferId)
-                        ( model, Cmd.none )
-                        ( updatedModel, refreshBalancesAfterFundingBatch key profile updatedModel )
+            else
+                case response of
+                    Ok funding ->
+                        let
+                            updatedModel =
+                                addFunding model <| Loaded funding
+                        in
+                        ( updatedModel
+                        , refreshBalancesAfterFundingBatch key profile updatedModel
+                        )
+
+                    Err ( e, transferId ) ->
+                        let
+                            updatedModel =
+                                addError "Funding" e <| addFunding model <| Failed transferId
+                        in
+                        retryRateLimit attempt
+                            e
+                            (SendFunding batchId (attempt + 1) transferId)
+                            ( model, Cmd.none )
+                            ( updatedModel, refreshBalancesAfterFundingBatch key profile updatedModel )
 
         _ ->
             ( withError model "Invalid operation", Cmd.none )
@@ -669,7 +741,7 @@ queueBatchRequests : List Msg -> Model -> ( Model, Cmd Msg )
 queueBatchRequests messages model =
     let
         ( queue, command ) =
-            RequestQueue.enqueue RequestQueueMsg messages model.batchRequestQueue
+            RequestQueue.enqueue RequestQueueMsg (List.filter (isCurrentBatchMessage model) messages) model.batchRequestQueue
     in
     ( { model | batchRequestQueue = queue }, command )
 
@@ -681,6 +753,122 @@ updateBatchRequestQueue queueMsg model =
             RequestQueue.update RequestQueueMsg queueMsg model.batchRequestQueue
     in
     ( { model | batchRequestQueue = queue }, command )
+
+
+isCurrentBatchMessage : Model -> Msg -> Bool
+isCurrentBatchMessage model message =
+    case message of
+        SendQuote batchId _ _ ->
+            batchId == model.quoteBatchId
+
+        SendTransfer batchId _ _ ->
+            batchId == model.transferBatchId
+
+        SendFunding batchId _ _ ->
+            batchId == model.fundingBatchId
+
+        SendPendingCancel batchId _ _ ->
+            batchId == model.pendingCancelBatchId
+
+        _ ->
+            True
+
+
+resetConnection : Model -> Model
+resetConnection model =
+    invalidatePendingCancelWorkflow <| resetQuotes model
+
+
+invalidateQuoteWorkflow : Model -> Model
+invalidateQuoteWorkflow model =
+    let
+        batchModel =
+            removeQueuedRequests isQuoteWorkflowMessage model
+    in
+    { batchModel
+        | quoteBatchId = model.quoteBatchId + 1
+        , transferBatchId = model.transferBatchId + 1
+        , fundingBatchId = model.fundingBatchId + 1
+    }
+
+
+invalidateTransferWorkflow : Model -> Model
+invalidateTransferWorkflow model =
+    let
+        batchModel =
+            removeQueuedRequests isTransferWorkflowMessage model
+    in
+    { batchModel
+        | transferBatchId = model.transferBatchId + 1
+        , fundingBatchId = model.fundingBatchId + 1
+    }
+
+
+invalidateFundingWorkflow : Model -> Model
+invalidateFundingWorkflow model =
+    let
+        batchModel =
+            removeQueuedRequests isFundingWorkflowMessage model
+    in
+    { batchModel
+        | fundingBatchId = model.fundingBatchId + 1
+    }
+
+
+invalidatePendingCancelWorkflow : Model -> Model
+invalidatePendingCancelWorkflow model =
+    let
+        batchModel =
+            removeQueuedRequests isPendingCancelMessage model
+    in
+    { batchModel
+        | pendingCancelBatchId = model.pendingCancelBatchId + 1
+    }
+
+
+removeQueuedRequests : (Msg -> Bool) -> Model -> Model
+removeQueuedRequests isObsolete model =
+    { model | batchRequestQueue = RequestQueue.filter (not << isObsolete) model.batchRequestQueue }
+
+
+isQuoteWorkflowMessage : Msg -> Bool
+isQuoteWorkflowMessage message =
+    case message of
+        SendQuote _ _ _ ->
+            True
+
+        _ ->
+            isTransferWorkflowMessage message
+
+
+isTransferWorkflowMessage : Msg -> Bool
+isTransferWorkflowMessage message =
+    case message of
+        SendTransfer _ _ _ ->
+            True
+
+        _ ->
+            isFundingWorkflowMessage message
+
+
+isFundingWorkflowMessage : Msg -> Bool
+isFundingWorkflowMessage message =
+    case message of
+        SendFunding _ _ _ ->
+            True
+
+        _ ->
+            False
+
+
+isPendingCancelMessage : Msg -> Bool
+isPendingCancelMessage message =
+    case message of
+        SendPendingCancel _ _ _ ->
+            True
+
+        _ ->
+            False
 
 
 retryRateLimit : Int -> Http.Error -> Msg -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg ) -> ( Model, Cmd Msg )
