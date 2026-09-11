@@ -2,7 +2,7 @@ module Balance exposing (Balance, balancesView, getBalances)
 
 import Api exposing (Status(..), wiseApiGet)
 import CSS.Attributes exposing (class, classList)
-import CSS.Bootstrap exposing (card, cardBody, cardText, cardTitle, col2, dFlex, flexShrink0, mb3, me3, overflowAuto, spinnerBorder, stretchedLink, textBgPrimary, visuallyHidden)
+import CSS.Bootstrap exposing (card, cardBody, cardText, cardTitle, col2, dFlex, flexShrink0, mb3, me3, overflowAuto, spinnerBorder, stretchedLink, textBgPrimary, textEnd, visuallyHidden)
 import Html exposing (Html, a, div, h5, p, span, text)
 import Html.Attributes exposing (href, style)
 import Html.Events exposing (onClick)
@@ -51,8 +51,8 @@ balanceView curr msg balance =
         ]
         [ div [ class cardBody ]
             [ h5 [ class cardTitle ] [ text <| Maybe.withDefault balance.currency balance.name ]
-            , p [ class cardText ]
-                [ text <| String.fromFloat balance.amount
+            , p [ classes [ cardText, textEnd ] ]
+                [ text <| formatAmount balance.amount
                 , a
                     [ href "#"
                     , class stretchedLink
@@ -62,6 +62,51 @@ balanceView curr msg balance =
                 ]
             ]
         ]
+
+
+formatAmount : Float -> String
+formatAmount amount =
+    let
+        amountString =
+            String.fromFloat amount
+    in
+    if String.contains "e" amountString || String.contains "E" amountString then
+        amountString
+
+    else
+        case String.split "." amountString of
+            integerPart :: decimalParts ->
+                formatIntegerPart integerPart
+                    ++ (case decimalParts of
+                            [] ->
+                                ""
+
+                            _ ->
+                                "." ++ String.join "." decimalParts
+                       )
+
+            [] ->
+                amountString
+
+
+formatIntegerPart : String -> String
+formatIntegerPart integerPart =
+    if String.startsWith "-" integerPart then
+        "-" ++ addThousandsSeparators (String.dropLeft 1 integerPart)
+
+    else
+        addThousandsSeparators integerPart
+
+
+addThousandsSeparators : String -> String
+addThousandsSeparators digits =
+    if String.length digits <= 3 then
+        digits
+
+    else
+        addThousandsSeparators (String.dropRight 3 digits)
+            ++ ","
+            ++ String.right 3 digits
 
 
 
