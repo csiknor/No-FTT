@@ -1055,7 +1055,7 @@ fundingFormView model =
 
         _ ->
             if anyFailed model.fundings then
-                button [ type_ "button", onClick ResubmitFailedFunding ] [ text "Retry failed fund" ]
+                button [ classes [ btn, btnPrimary ], type_ "button", onClick ResubmitFailedFunding ] [ text "Retry failed fund" ]
 
             else
                 text ""
