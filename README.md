@@ -11,10 +11,11 @@ A web application that uses the Wise API to transfer money in a way that will av
 * Provides option to cancel pending transfers
 
 ## Installation
+
 1. Clone the repository
-2. Build and run the docker image
+2. Build and run the Docker image
     ```bash 
-    docker build -t no-ftt:latest . && docker run -p 9000:80 --rm no-ftt:latest
+    docker buildx build --load -t no-ftt:latest . && docker run -p 9000:80 --rm no-ftt:latest
     ```
 3. Open the application in your browser at http://localhost:9000
 
@@ -62,7 +63,7 @@ The application is deployed as a Docker container. The [`Dockerfile`](Dockerfile
 
 1. Build and run the docker image
     ```bash 
-    docker build -t no-ftt:latest . && docker run -p 9000:80 --rm no-ftt:latest
+    docker buildx build --load -t no-ftt:latest . && docker run -p 9000:80 --rm no-ftt:latest
     ```
 2. Open the application in your browser at http://localhost:9000
 
