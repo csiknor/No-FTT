@@ -11,12 +11,19 @@ A web application that uses the Wise API to transfer money in a way that will av
 * Provides option to cancel pending transfers
 
 ## Installation
-1. Clone the repository
-2. Build and run the docker image
-    ```bash 
-    docker build -t no-ftt:latest . && docker run -p 9000:80 --rm no-ftt:latest
+
+1. Install Docker with the [Buildx plugin](https://docs.docker.com/build/install-buildx/)
+2. If you use [Colima](https://github.com/abiosoft/colima), allocate at least 8 GB of memory to its virtual machine
+    ```bash
+    colima stop
+    colima start --memory 8
     ```
-3. Open the application in your browser at http://localhost:9000
+3. Clone the repository
+4. Build and run the Docker image
+    ```bash 
+    docker buildx build --load -t no-ftt:latest . && docker run -p 9000:80 --rm no-ftt:latest
+    ```
+5. Open the application in your browser at http://localhost:9000
 
 ## Usage
 1. Create an API token on the Wise web UI: `Your account` / `Settings` / `Integrations and tools` / `Developer tools` / `API tokens`
@@ -62,7 +69,7 @@ The application is deployed as a Docker container. The [`Dockerfile`](Dockerfile
 
 1. Build and run the docker image
     ```bash 
-    docker build -t no-ftt:latest . && docker run -p 9000:80 --rm no-ftt:latest
+    docker buildx build --load -t no-ftt:latest . && docker run -p 9000:80 --rm no-ftt:latest
     ```
 2. Open the application in your browser at http://localhost:9000
 
